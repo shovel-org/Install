@@ -47,6 +47,8 @@
     Use the credentials of the current user for the proxy server that is specified by the -Proxy parameter.
 .PARAMETER RunAsAdmin
     Force to run the installer as administrator.
+.PARAMETER ScoopBranch
+    Specifies the core branch to be installed.
 .LINK
     https://scoop.sh
 .LINK
@@ -60,7 +62,8 @@ param(
     [Uri] $Proxy,
     [System.Management.Automation.PSCredential] $ProxyCredential,
     [Switch] $ProxyUseDefaultCredentials,
-    [Switch] $RunAsAdmin
+    [Switch] $RunAsAdmin,
+    [Switch] $ScoopBranch = 'master'
 )
 
 # Disable StrictMode in this script
@@ -407,6 +410,7 @@ function Add-DefaultConfig {
 
     # save current datatime to lastUpdate
     Add-Config -Name 'lastUpdate' -Value ([System.DateTime]::Now.ToString('o')) | Out-Null
+    Add-Config -Name 'SCOOP_BRANCH' -Value $ScoopBranch | Out-Null
 }
 
 function Install-Scoop {
@@ -429,7 +433,7 @@ function Install-Scoop {
 
     if ($GIT_INSTALLED) {
         Write-InstallInfo 'Installing using git'
-        git clone $SCOOP_GIT_REPO_GIT $SCOOP_APP_DIR
+        git clone --branch $ScoopBranch $SCOOP_GIT_REPO_GIT $SCOOP_APP_DIR
 
         git clone $SCOOP_MAIN_BUCKET_REPO_GIT $SCOOP_MAIN_BUCKET_DIR
         git clone $SCOOP_BASE_BUCKET_REPO_GIT $SCOOP_BASE_BUCKET_DIR
@@ -456,17 +460,17 @@ function Install-Scoop {
         # 1. extract scoop
         $scoopUnzipTempDir = "$SCOOP_APP_DIR\_tmp"
         Expand-ZipArchive $scoopZipfile $scoopUnzipTempDir
-        Copy-Item "$scoopUnzipTempDir\Scoop-*\*" $SCOOP_APP_DIR -Recurse -Force
+        Copy-Item "$scoopUnzipTempDir\Scoop-$ScoopBranch\*" $SCOOP_APP_DIR -Recurse -Force
 
         # 2. extract scoop main bucket
         $scoopMainUnzipTempDir = "$SCOOP_MAIN_BUCKET_DIR\_tmp"
         Expand-ZipArchive $scoopMainZipfile $scoopMainUnzipTempDir
-        Copy-Item "$scoopMainUnzipTempDir\Main-*\*" $SCOOP_MAIN_BUCKET_DIR -Recurse -Force
+        Copy-Item "$scoopMainUnzipTempDir\Main-master\*" $SCOOP_MAIN_BUCKET_DIR -Recurse -Force
 
         # 3. extract base bucket
         $scoopBaseUnzipTempDir = "$SCOOP_BASE_BUCKET_DIR\_tmp"
         Expand-ZipArchive $scoopBaseZipfile $scoopBaseUnzipTempDir
-        Copy-Item "$scoopBaseUnzipTempDir\Base-*\*" $SCOOP_BASE_BUCKET_DIR -Recurse -Force
+        Copy-Item "$scoopBaseUnzipTempDir\Base-main\*" $SCOOP_BASE_BUCKET_DIR -Recurse -Force
 
         # Cleanup
         Remove-Item $scoopUnzipTempDir, $scoopMainUnzipTempDir, $scoopBaseUnzipTempDir -Recurse -Force
@@ -511,7 +515,7 @@ $SCOOP_CONFIG_FILE = "$SCOOP_CONFIG_HOME\scoop\config.json"
 
 # TODO: Use a specific version of Scoop and the main bucket
 $SCOOP_PACKAGE_REPO_GIT = 'https://github.com/ScoopInstaller/Scoop'
-$SCOOP_PACKAGE_REPO = "$SCOOP_PACKAGE_REPO_GIT/archive/master.zip"
+$SCOOP_PACKAGE_REPO = "$SCOOP_PACKAGE_REPO_GIT/archive/$ScoopBranch.zip"
 $SCOOP_MAIN_BUCKET_REPO_GIT = 'https://github.com/ScoopInstaller/Main'
 $SCOOP_MAIN_BUCKET_REPO = "$SCOOP_MAIN_BUCKET_REPO_GIT/archive/master.zip"
 $SCOOP_BASE_BUCKET_REPO_GIT = 'https://github.com/shovel-org/Base'
