@@ -252,6 +252,8 @@ function Expand-ZipArchive {
 }
 
 function Import-ScoopShim {
+    Write-InstallInfo 'Creating shim...'
+
     # The scoop executable
     $path = "$SCOOP_APP_DIR\bin\scoop.ps1"
 
@@ -416,6 +418,15 @@ function Install-Scoop {
     # Enable TLS 1.2
     Optimize-SecurityProtocol
 
+    # Scoop main bucket directory
+    $SCOOP_MAIN_BUCKET_DIR = "$SCOOP_BUCKETS_DIR\main"
+
+    $SCOOP_APP_DIR, $SCOOP_BUCKETS_DIR, $SCOOP_MAIN_BUCKET_DIR | ForEach-Object {
+        if (!(Test-Path -LiteralPath $_ -PathType 'Container')) {
+            New-Item -LiteralPath $_ -ItemType 'Directory' | Out-Null
+        }
+    }
+
     # Download scoop zip from GitHub
     Write-InstallInfo 'Downloading...'
     $downloader = Get-Downloader
@@ -444,10 +455,8 @@ function Install-Scoop {
     Copy-Item "$scoopMainUnzipTempDir\Main-*\*" $SCOOP_MAIN_BUCKET_DIR -Recurse -Force
 
     # Cleanup
-    Remove-Item $scoopUnzipTempDir -Recurse -Force
-    Remove-Item $scoopZipfile
-    Remove-Item $scoopMainUnzipTempDir -Recurse -Force
-    Remove-Item $scoopMainZipfile
+    Remove-Item $scoopUnzipTempDir, $scoopMainUnzipTempDir -Recurse -Force
+    Remove-Item $scoopZipfile, $scoopMainZipfile
 
     # Create the scoop shim
     Write-InstallInfo 'Creating shim...'
@@ -469,10 +478,12 @@ $NoProxy, $Proxy, $ProxyCredential, $ProxyUseDefaultCredentials, $RunAsAdmin | O
 # Prepare variables
 $IS_EXECUTED_FROM_IEX = ($null -eq $MyInvocation.MyCommand.Path)
 
+if (!$env:USERPROFILE) { $env:USERPROFILE = $env:HOME }
+
 # Scoop root directory
-$SCOOP_DIR = $ScoopDir, $env:SCOOP, "$env:USERPROFILE\scoop" | Where-Object { -not [String]::IsNullOrEmpty($_) } | Select-Object -First 1
+$SCOOP_DIR = $ScoopDir, $env:SCOOP, "$env:USERPROFILE\Shovel" | Where-Object { -not [String]::IsNullOrEmpty($_) } | Select-Object -First 1
 # Scoop global apps directory
-$SCOOP_GLOBAL_DIR = $ScoopGlobalDir, $env:SCOOP_GLOBAL, "$env:ProgramData\scoop" | Where-Object { -not [String]::IsNullOrEmpty($_) } | Select-Object -First 1
+$SCOOP_GLOBAL_DIR = $ScoopGlobalDir, $env:SCOOP_GLOBAL, "$env:ProgramData\Shovel" | Where-Object { -not [String]::IsNullOrEmpty($_) } | Select-Object -First 1
 # Scoop cache directory
 $SCOOP_CACHE_DIR = $ScoopCacheDir, $env:SCOOP_CACHE, "$SCOOP_DIR\cache" | Where-Object { -not [String]::IsNullOrEmpty($_) } | Select-Object -First 1
 # Scoop shims directory
@@ -480,7 +491,7 @@ $SCOOP_SHIMS_DIR = "$SCOOP_DIR\shims"
 # Scoop itself directory
 $SCOOP_APP_DIR = "$SCOOP_DIR\apps\scoop\current"
 # Scoop main bucket directory
-$SCOOP_MAIN_BUCKET_DIR = "$SCOOP_DIR\buckets\main"
+$SCOOP_BUCKETS_DIR = "$SCOOP_DIR\buckets"
 # Scoop config file location
 $SCOOP_CONFIG_HOME = $env:XDG_CONFIG_HOME, "$env:USERPROFILE\.config" | Select-Object -First 1
 $SCOOP_CONFIG_FILE = "$SCOOP_CONFIG_HOME\scoop\config.json"
