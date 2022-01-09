@@ -86,9 +86,9 @@ Set-StrictMode -Off
 #region Functions
 function Write-InstallInfo {
     param(
-        [Parameter(Mandatory = $True, Position = 0)]
+        [Parameter(Mandatory, Position = 0)]
         [String] $String,
-        [Parameter(Mandatory = $False, Position = 1)]
+        [Parameter(Position = 1)]
         [System.ConsoleColor] $ForegroundColor = $host.UI.RawUI.ForegroundColor
     )
 
@@ -109,7 +109,7 @@ function Deny-Install {
         [Int] $errorCode = 1
     )
 
-    Write-InstallInfo -String $message -ForegroundColor DarkRed
+    Write-InstallInfo -String $message -ForegroundColor 'DarkRed'
     Write-InstallInfo 'Abort.'
 
     # Don't abort if invoked with iex that would close the PS session
@@ -126,7 +126,7 @@ function Test-ValidateParameter {
     }
 
     if ($ProxyUseDefaultCredentials -and $null -ne $ProxyCredential) {
-        Deny-Install "ProxyUseDefaultCredentials is conflict with ProxyCredential. Don't use the -ProxyCredential and -ProxyUseDefaultCredentials together."
+        Deny-Install "ProxyUseDefaultCredentials is conflict with ProxyCredential. Do not use the -ProxyCredential and -ProxyUseDefaultCredentials together."
     }
 }
 
@@ -148,7 +148,7 @@ function Test-Prerequisite {
     }
 
     # Ensure Robocopy.exe is accessible
-    if (!([bool](Get-Command -Name 'robocopy' -ErrorAction SilentlyContinue))) {
+    if (!([bool](Get-Command -Name 'robocopy' -ErrorAction 'SilentlyContinue'))) {
         if (!$SkipRobocopy) {
             Deny-Install "Scoop requires 'C:\Windows\System32\Robocopy.exe' to work. Please make sure 'C:\Windows\System32' is in your PATH."
         }
@@ -166,7 +166,7 @@ function Test-Prerequisite {
     }
 
     # Test if scoop is installed, by checking if scoop command exists.
-    if ([bool](Get-Command -Name 'scoop' -ErrorAction SilentlyContinue)) {
+    if ([bool](Get-Command -Name 'scoop' -ErrorAction 'SilentlyContinue')) {
         Deny-Install "Scoop is already installed. Run 'scoop update' to get the latest version."
     }
 }
@@ -215,15 +215,11 @@ function Get-Downloader {
 }
 
 function Test-isFileLocked {
-    param(
-        [String] $path
-    )
+    param([String] $path)
 
     $file = New-Object System.IO.FileInfo $path
 
-    if (!(Test-Path $path)) {
-        return $false
-    }
+    if (!(Test-Path -LiteralPath $path -PathType 'Leaf')) { return $false }
 
     try {
         $stream = $file.Open(
@@ -247,7 +243,7 @@ function Expand-ZipArchive {
         [String] $to
     )
 
-    if (!(Test-Path $path)) {
+    if (!(Test-Path -LiteralPath $path -PathType 'Leaf')) {
         Deny-Install "Unzip failed: can't find $path to unzip."
     }
 
@@ -265,6 +261,8 @@ function Expand-ZipArchive {
             break
         }
     }
+
+    Write-InstallInfo "Unziping '$path' to '$to'"
 
     # PowerShell 5+: use Expand-Archive to extract zip files
     Microsoft.PowerShell.Archive\Expand-Archive -Path $path -DestinationPath $to -Force
@@ -293,8 +291,8 @@ function Import-ScoopShim {
     # The scoop executable
     $path = "$SCOOP_APP_DIR\bin\scoop.ps1"
 
-    if (!(Test-Path $SCOOP_SHIMS_DIR)) {
-        New-Item -Type Directory $SCOOP_SHIMS_DIR | Out-Null
+    if (!(Test-Path -LiteralPath $SCOOP_SHIMS_DIR -PathType 'Container')) {
+        New-Item $SCOOP_SHIMS_DIR -Type 'Directory' | Out-Null
     }
 
     # The scoop shim
@@ -368,14 +366,14 @@ function Add-ShimsDirToPath {
 }
 
 function Use-Config {
-    if (!(Test-Path $SCOOP_CONFIG_FILE)) {
+    if (!(Test-Path -LiteralPath $SCOOP_CONFIG_FILE -PathType 'Leaf')) {
         return $null
     }
 
     try {
-        return (Get-Content $SCOOP_CONFIG_FILE -Raw | ConvertFrom-Json -ErrorAction Stop)
+        return (Get-Content $SCOOP_CONFIG_FILE -Raw | ConvertFrom-Json -ErrorAction 'Stop')
     } catch {
-        Deny-Install "ERROR loading $SCOOP_CONFIG_FILE`: $($_.Exception.Message)"
+        Deny-Install "ERROR loading ${SCOOP_CONFIG_FILE}: $($_.Exception.Message)"
     }
 }
 
@@ -394,25 +392,26 @@ function Add-Config {
             $Value = [System.Convert]::ToBoolean($Value)
         }
         if ($null -eq $scoopConfig.$Name) {
-            $scoopConfig | Add-Member -MemberType NoteProperty -Name $Name -Value $Value
+            $scoopConfig | Add-Member -MemberType 'NoteProperty' -Name $Name -Value $Value
         } else {
             $scoopConfig.$Name = $Value
         }
     } else {
         $baseDir = Split-Path -Path $SCOOP_CONFIG_FILE
-        if (!(Test-Path $baseDir)) {
-            New-Item -Type Directory $baseDir | Out-Null
+        if (!(Test-Path -LiteralPath $baseDir -PathType 'Container')) {
+            New-Item -LiteralPath $baseDir -Type 'Directory' | Out-Null
         }
 
         $scoopConfig = New-Object PSObject
-        $scoopConfig | Add-Member -MemberType NoteProperty -Name $Name -Value $Value
+        $scoopConfig | Add-Member -MemberType 'NoteProperty' -Name $Name -Value $Value
     }
 
     if ($null -eq $Value) {
         $scoopConfig.PSObject.Properties.Remove($Name)
     }
 
-    ConvertTo-Json $scoopConfig | Set-Content $SCOOP_CONFIG_FILE -Encoding ASCII
+    Out-UTF8File -LiteralPath $SCOOP_CONFIG_FILE -Content (ConvertTo-Json $scoopConfig)
+
     return $scoopConfig
 }
 
@@ -492,7 +491,7 @@ function Install-Scoop {
             Copy-Item $cachedCore $scoopZipfile
         } else {
             Write-InstallInfo 'Downloading Core'
-            $downloader.downloadFile($SCOOP_PACKAGE_REPO, $scoopZipfile)
+            $downloader.DownloadFile($SCOOP_PACKAGE_REPO, $scoopZipfile)
         }
 
         # 2. download scoop main bucket
@@ -503,7 +502,7 @@ function Install-Scoop {
             Copy-Item $cachedMain $scoopMainZipfile
         } else {
             Write-InstallInfo 'Downloading Main bucket'
-            $downloader.downloadFile($SCOOP_MAIN_BUCKET_REPO, $scoopMainZipfile)
+            $downloader.DownloadFile($SCOOP_MAIN_BUCKET_REPO, $scoopMainZipfile)
         }
 
         # 3. download base bucket
@@ -514,12 +513,13 @@ function Install-Scoop {
             Copy-Item $cachedBased $scoopBaseZipfile
         } else {
             Write-InstallInfo 'Downloading Base bucket'
-            $downloader.downloadFile($SCOOP_BASE_BUCKET_REPO, $scoopBaseZipfile)
+            $downloader.DownloadFile($SCOOP_BASE_BUCKET_REPO, $scoopBaseZipfile)
         }
 
         # Extract files from downloaded zip
         Write-InstallInfo 'Extracting...'
 
+        #TODO: Move instead of Copy
         # 1. extract scoop
         $scoopUnzipTempDir = "$SCOOP_APP_DIR\_tmp"
         Expand-ZipArchive $scoopZipfile $scoopUnzipTempDir
