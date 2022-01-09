@@ -1,4 +1,4 @@
-# Scoop (un)installer
+# Scoop installer
 
 ## Installation
 

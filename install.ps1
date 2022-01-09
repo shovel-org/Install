@@ -28,6 +28,12 @@
     Scoop installer.
 .DESCRIPTION
     The installer of Scoop. For details please check the website and wiki.
+
+    Installer support instalation from local zip archives. This is useful when there are network issues. ScoopBranch parameters needs to configured accordingly.
+    Following zips are supported:
+        Core.zip
+        Base.zip
+        main.zip
 .PARAMETER ScoopDir
     Specifies directory to install.
     Scoop will be installed to '$env:USERPROFILE\scoop' if not specificed.
@@ -52,6 +58,9 @@
 .PARAMETER SkipRobocopy
     Specifies to not check the existence of robocopy.exe.
     Useful for nanocore installations.
+.PARAMETER SkipGit
+    Use this option if git is installed, but should not be used.
+    Useful only when git is installed, but there is need to install from cached files due to network issues.
 .LINK
     https://scoop.sh
 .LINK
@@ -67,7 +76,8 @@ param(
     [Switch] $ProxyUseDefaultCredentials,
     [Switch] $RunAsAdmin,
     [Switch] $ScoopBranch = 'master',
-    [Switch] $SkipRobocopy
+    [Switch] $SkipRobocopy,
+    [Switch] $SkipGit
 )
 
 # Disable StrictMode in this script
@@ -464,7 +474,7 @@ function Install-Scoop {
         }
     }
 
-    if ($GIT_INSTALLED) {
+    if ($INSTALL_USING_GIT) {
         Write-InstallInfo 'Installing using git'
         git clone --branch $ScoopBranch $SCOOP_GIT_REPO_GIT $SCOOP_APP_DIR
 
@@ -472,20 +482,40 @@ function Install-Scoop {
         git clone $SCOOP_BASE_BUCKET_REPO_GIT $SCOOP_BASE_BUCKET_DIR
     } else {
         # Download scoop zip from GitHub
-        Write-InstallInfo 'Downloading...'
         $downloader = Get-Downloader
 
         # 1. download scoop
-        $scoopZipfile = "$SCOOP_APP_DIR\scoop.zip"
-        $downloader.downloadFile($SCOOP_PACKAGE_REPO, $scoopZipfile)
+        $cachedCore = "$INSTALLER_DIR\Core.zip"
+        $scoopZipfile = "$SCOOP_APP_DIR\Core.zip"
+        if (Test-Path -LiteralPath $cachedCore -PathType 'Leaf') {
+            Write-InstallInfo "Loading Core from '$cachedCore'"
+            Copy-Item $cachedCore $scoopZipfile
+        } else {
+            Write-InstallInfo 'Downloading Core'
+            $downloader.downloadFile($SCOOP_PACKAGE_REPO, $scoopZipfile)
+        }
 
         # 2. download scoop main bucket
-        $scoopMainZipfile = "$SCOOP_MAIN_BUCKET_DIR\scoop-main.zip"
-        $downloader.downloadFile($SCOOP_MAIN_BUCKET_REPO, $scoopMainZipfile)
+        $cachedMain = "$INSTALLER_DIR\main.zip"
+        $scoopMainZipfile = "$SCOOP_MAIN_BUCKET_DIR\main.zip"
+        if (Test-Path -LiteralPath $cachedMain -PathType 'Leaf') {
+            Write-InstallInfo "Loading Main bucket from '$cachedMain'"
+            Copy-Item $cachedMain $scoopMainZipfile
+        } else {
+            Write-InstallInfo 'Downloading Main bucket'
+            $downloader.downloadFile($SCOOP_MAIN_BUCKET_REPO, $scoopMainZipfile)
+        }
 
         # 3. download base bucket
-        $scoopBaseZipfile = "$SCOOP_BASE_BUCKET_DIR\scoop-base.zip"
-        $downloader.downloadFile($SCOOP_BASE_BUCKET_REPO, $scoopBaseZipfile)
+        $cachedBased = "$INSTALLER_DIR\Base.zip"
+        $scoopBaseZipfile = "$SCOOP_BASE_BUCKET_DIR\Base.zip"
+        if (Test-Path -LiteralPath $cachedBased -PathType 'Leaf') {
+            Write-InstallInfo "Loading Base bucket from '$cachedBased'"
+            Copy-Item $cachedBased $scoopBaseZipfile
+        } else {
+            Write-InstallInfo 'Downloading Base bucket'
+            $downloader.downloadFile($SCOOP_BASE_BUCKET_REPO, $scoopBaseZipfile)
+        }
 
         # Extract files from downloaded zip
         Write-InstallInfo 'Extracting...'
@@ -498,12 +528,12 @@ function Install-Scoop {
         # 2. extract scoop main bucket
         $scoopMainUnzipTempDir = "$SCOOP_MAIN_BUCKET_DIR\_tmp"
         Expand-ZipArchive $scoopMainZipfile $scoopMainUnzipTempDir
-        Copy-Item "$scoopMainUnzipTempDir\Main-master\*" $SCOOP_MAIN_BUCKET_DIR -Recurse -Force
+        Copy-Item "$scoopMainUnzipTempDir\Main-*\*" $SCOOP_MAIN_BUCKET_DIR -Recurse -Force
 
         # 3. extract base bucket
         $scoopBaseUnzipTempDir = "$SCOOP_BASE_BUCKET_DIR\_tmp"
         Expand-ZipArchive $scoopBaseZipfile $scoopBaseUnzipTempDir
-        Copy-Item "$scoopBaseUnzipTempDir\Base-main\*" $SCOOP_BASE_BUCKET_DIR -Recurse -Force
+        Copy-Item "$scoopBaseUnzipTempDir\Base-*\*" $SCOOP_BASE_BUCKET_DIR -Recurse -Force
 
         # Cleanup
         Remove-Item $scoopUnzipTempDir, $scoopMainUnzipTempDir, $scoopBaseUnzipTempDir -Recurse -Force
@@ -530,6 +560,8 @@ $IS_EXECUTED_FROM_IEX = ($null -eq $MyInvocation.MyCommand.Path)
 
 if (!$env:USERPROFILE) { $env:USERPROFILE = $env:HOME }
 
+$INSTALLER_DIR = $PSScriptRoot
+
 # Scoop root directory
 $SCOOP_DIR = $ScoopDir, $env:SCOOP, "$env:USERPROFILE\Shovel" | Where-Object { -not [String]::IsNullOrEmpty($_) } | Select-Object -First 1
 # Scoop global apps directory
@@ -555,6 +587,8 @@ $SCOOP_BASE_BUCKET_REPO_GIT = 'https://github.com/shovel-org/Base'
 $SCOOP_BASE_BUCKET_REPO = "$SCOOP_BASE_BUCKET_REPO_GIT/archive/main.zip"
 
 $GIT_INSTALLED = [bool] (Get-Command 'git' -ErrorAction 'SilentlyContinue')
+$INSTALL_USING_GIT = $GIT_INSTALLED
+if ($SkipGit) { $INSTALL_USING_GIT = $false }
 
 # Quit if anything goes wrong
 $oldErrorActionPreference = $ErrorActionPreference
