@@ -49,6 +49,9 @@
     Force to run the installer as administrator.
 .PARAMETER ScoopBranch
     Specifies the core branch to be installed.
+.PARAMETER SkipRobocopy
+    Specifies to not check the existence of robocopy.exe.
+    Useful for nanocore installations.
 .LINK
     https://scoop.sh
 .LINK
@@ -63,7 +66,8 @@ param(
     [System.Management.Automation.PSCredential] $ProxyCredential,
     [Switch] $ProxyUseDefaultCredentials,
     [Switch] $RunAsAdmin,
-    [Switch] $ScoopBranch = 'master'
+    [Switch] $ScoopBranch = 'master',
+    [Switch] $SkipRobocopy
 )
 
 # Disable StrictMode in this script
@@ -135,7 +139,9 @@ function Test-Prerequisite {
 
     # Ensure Robocopy.exe is accessible
     if (!([bool](Get-Command -Name 'robocopy' -ErrorAction SilentlyContinue))) {
-        Deny-Install "Scoop requires 'C:\Windows\System32\Robocopy.exe' to work. Please make sure 'C:\Windows\System32' is in your PATH."
+        if (!$SkipRobocopy) {
+            Deny-Install "Scoop requires 'C:\Windows\System32\Robocopy.exe' to work. Please make sure 'C:\Windows\System32' is in your PATH."
+        }
     }
 
     # Detect if RunAsAdministrator, there is no need to run as administrator when installing Scoop.
@@ -254,6 +260,23 @@ function Expand-ZipArchive {
     Microsoft.PowerShell.Archive\Expand-Archive -Path $path -DestinationPath $to -Force
 }
 
+function Out-UTF8File {
+    param(
+        [Alias('Path', 'LiteralPath')]
+        [System.IO.FileInfo] $File,
+        $Content,
+        $LineEnd = "`r`n"
+    )
+
+    if ($null -eq $Content) { return }
+    $c = $Content -join $LineEnd
+    if ($PSVersionTable.PSVersion.Major -ge 6) {
+        Set-Content -LiteralPath $File -Value $c -Encoding 'utf8'
+    } else {
+        [System.IO.File]::WriteAllText($File, $c)
+    }
+}
+
 function Import-ScoopShim {
     Write-InstallInfo 'Creating shim...'
 
@@ -273,12 +296,15 @@ function Import-ScoopShim {
     Pop-Location
 
     # Setting PSScriptRoot in Shim if it is not defined, so the shim doesn't break in PowerShell 2.0
-    Write-Output "if (!(Test-Path Variable:PSScriptRoot)) { `$PSScriptRoot = Split-Path `$MyInvocation.MyCommand.Path -Parent }" | Out-File "$shim.ps1" -Encoding utf8
-    Write-Output "`$path = Join-Path `"`$PSScriptRoot`" `"$relativePath`"" | Out-File "$shim.ps1" -Encoding utf8 -Append
-    Write-Output "if (`$MyInvocation.ExpectingInput) { `$input | & `$path @args } else { & `$path @args }" | Out-File "$shim.ps1" -Encoding utf8 -Append
+    Out-UTF8File -LiteralPath "$shim.ps1" @"
+if (!(Test-Path Variable:PSScriptRoot)) { `$PSScriptRoot = Split-Path `$MyInvocation.MyCommand.Path -Parent }
+`$path = Join-Path `"`$PSScriptRoot`" `"$relativePath`"
+if (`$MyInvocation.ExpectingInput) { `$input | & `$path @args } else { & `$path @args }
+"@
 
     # Make scoop accessible from cmd.exe
-    Write-Output "@echo off
+    Out-UTF8File -LiteralPath "$shim.cmd" -Content @"
+@echo off
 setlocal enabledelayedexpansion
 set args=%*
 :: replace problem characters in arguments
@@ -287,10 +313,14 @@ set args=%args:(=``(%
 set args=%args:)=``)%
 set invalid=`"='
 if !args! == !invalid! ( set args= )
-powershell -noprofile -ex unrestricted `"& '$path' %args%;exit `$lastexitcode`"" | Out-File "$shim.cmd" -Encoding ascii
+powershell -noprofile -ex unrestricted `"& '$path' %args%;exit `$lastexitcode`"
+"@
 
     # Make scoop accessible from bash or other posix shell
-    Write-Output "#!/bin/sh`npowershell.exe -ex unrestricted `"$path`" `"$@`"" | Out-File $shim -Encoding ascii
+    Out-UTF8File -LiteralPath $shim -Content "#!/bin/sh`npowershell.exe -ex unrestricted `"$path`" `"$@`"" -LineEnd "`n"
+
+    Get-ChildItem $SCOOP_SHIMS_DIR -Filter 'scoop.*' |
+        Copy-Item -Destination { Join-Path $_.Directory.FullName (($_.BaseName -replace 'scoop', 'shovel') + $_.Extension) }
 }
 
 function Get-Env {
@@ -411,6 +441,9 @@ function Add-DefaultConfig {
     # save current datatime to lastUpdate
     Add-Config -Name 'lastUpdate' -Value ([System.DateTime]::Now.ToString('o')) | Out-Null
     Add-Config -Name 'SCOOP_BRANCH' -Value $ScoopBranch | Out-Null
+    if ($SkipRobocopy) {
+        Add-Config -Name 'core.preferMoveItem' -Value $true | Out-Null
+    }
 }
 
 function Install-Scoop {
@@ -490,7 +523,7 @@ function Install-Scoop {
 #endregion Functions
 
 #region Main
-$NoProxy, $Proxy, $ProxyCredential, $ProxyUseDefaultCredentials, $RunAsAdmin | Out-Null
+$NoProxy, $Proxy, $ProxyCredential, $ProxyUseDefaultCredentials, $RunAsAdmin, $SkipRobocopy | Out-Null
 
 # Prepare variables
 $IS_EXECUTED_FROM_IEX = ($null -eq $MyInvocation.MyCommand.Path)
