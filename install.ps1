@@ -427,39 +427,42 @@ function Install-Scoop {
         }
     }
 
-    # Download scoop zip from GitHub
-    Write-InstallInfo 'Downloading...'
-    $downloader = Get-Downloader
-    # 1. download scoop
-    $scoopZipfile = "$SCOOP_APP_DIR\scoop.zip"
-    if (!(Test-Path $SCOOP_APP_DIR)) {
-        New-Item -Type Directory $SCOOP_APP_DIR | Out-Null
+    if ($GIT_INSTALLED) {
+        Write-InstallInfo 'Installing using git'
+        git clone $SCOOP_GIT_REPO_GIT $SCOOP_APP_DIR
+
+        git clone $SCOOP_MAIN_BUCKET_REPO_GIT $SCOOP_MAIN_BUCKET_DIR
+    } else {
+        # Download scoop zip from GitHub
+        Write-InstallInfo 'Downloading...'
+        $downloader = Get-Downloader
+
+        # 1. download scoop
+        $scoopZipfile = "$SCOOP_APP_DIR\scoop.zip"
+        $downloader.downloadFile($SCOOP_PACKAGE_REPO, $scoopZipfile)
+
+        # 2. download scoop main bucket
+        $scoopMainZipfile = "$SCOOP_MAIN_BUCKET_DIR\scoop-main.zip"
+        $downloader.downloadFile($SCOOP_MAIN_BUCKET_REPO, $scoopMainZipfile)
+
+        # Extract files from downloaded zip
+        Write-InstallInfo 'Extracting...'
+
+        # 1. extract scoop
+        $scoopUnzipTempDir = "$SCOOP_APP_DIR\_tmp"
+        Expand-ZipArchive $scoopZipfile $scoopUnzipTempDir
+        Copy-Item "$scoopUnzipTempDir\Scoop-*\*" $SCOOP_APP_DIR -Recurse -Force
+
+        # 2. extract scoop main bucket
+        $scoopMainUnzipTempDir = "$SCOOP_MAIN_BUCKET_DIR\_tmp"
+        Expand-ZipArchive $scoopMainZipfile $scoopMainUnzipTempDir
+        Copy-Item "$scoopMainUnzipTempDir\Main-*\*" $SCOOP_MAIN_BUCKET_DIR -Recurse -Force
+
+        # Cleanup
+        Remove-Item $scoopUnzipTempDir, $scoopMainUnzipTempDir -Recurse -Force
+        Remove-Item $scoopZipfile, $scoopMainZipfile
     }
-    $downloader.downloadFile($SCOOP_PACKAGE_REPO, $scoopZipfile)
-    # 2. download scoop main bucket
-    $scoopMainZipfile = "$SCOOP_MAIN_BUCKET_DIR\scoop-main.zip"
-    if (!(Test-Path $SCOOP_MAIN_BUCKET_DIR)) {
-        New-Item -Type Directory $SCOOP_MAIN_BUCKET_DIR | Out-Null
-    }
-    $downloader.downloadFile($SCOOP_MAIN_BUCKET_REPO, $scoopMainZipfile)
 
-    # Extract files from downloaded zip
-    Write-InstallInfo 'Extracting...'
-    # 1. extract scoop
-    $scoopUnzipTempDir = "$SCOOP_APP_DIR\_tmp"
-    Expand-ZipArchive $scoopZipfile $scoopUnzipTempDir
-    Copy-Item "$scoopUnzipTempDir\scoop-*\*" $SCOOP_APP_DIR -Recurse -Force
-    # 2. extract scoop main bucket
-    $scoopMainUnzipTempDir = "$SCOOP_MAIN_BUCKET_DIR\_tmp"
-    Expand-ZipArchive $scoopMainZipfile $scoopMainUnzipTempDir
-    Copy-Item "$scoopMainUnzipTempDir\Main-*\*" $SCOOP_MAIN_BUCKET_DIR -Recurse -Force
-
-    # Cleanup
-    Remove-Item $scoopUnzipTempDir, $scoopMainUnzipTempDir -Recurse -Force
-    Remove-Item $scoopZipfile, $scoopMainZipfile
-
-    # Create the scoop shim
-    Write-InstallInfo 'Creating shim...'
     Import-ScoopShim
 
     # Finially ensure scoop shims is in the PATH
@@ -467,7 +470,7 @@ function Install-Scoop {
     # Setup initial configuration of Scoop
     Add-DefaultConfig
 
-    Write-InstallInfo 'Scoop was installed successfully!' -ForegroundColor DarkGreen
+    Write-InstallInfo 'Scoop was installed successfully!' -ForegroundColor 'DarkGreen'
     Write-InstallInfo "Type 'scoop help' for instructions."
 }
 #endregion Functions
@@ -497,8 +500,12 @@ $SCOOP_CONFIG_HOME = $env:XDG_CONFIG_HOME, "$env:USERPROFILE\.config" | Select-O
 $SCOOP_CONFIG_FILE = "$SCOOP_CONFIG_HOME\scoop\config.json"
 
 # TODO: Use a specific version of Scoop and the main bucket
-$SCOOP_PACKAGE_REPO = 'https://github.com/ScoopInstaller/Scoop/archive/master.zip'
-$SCOOP_MAIN_BUCKET_REPO = 'https://github.com/ScoopInstaller/Main/archive/master.zip'
+$SCOOP_PACKAGE_REPO_GIT = 'https://github.com/ScoopInstaller/Scoop'
+$SCOOP_PACKAGE_REPO = "$SCOOP_PACKAGE_REPO_GIT/archive/master.zip"
+$SCOOP_MAIN_BUCKET_REPO_GIT = 'https://github.com/ScoopInstaller/Main'
+$SCOOP_MAIN_BUCKET_REPO = "$SCOOP_MAIN_BUCKET_REPO_GIT/archive/master.zip"
+
+$GIT_INSTALLED = [bool] (Get-Command 'git' -ErrorAction 'SilentlyContinue')
 
 # Quit if anything goes wrong
 $oldErrorActionPreference = $ErrorActionPreference
