@@ -432,6 +432,7 @@ function Install-Scoop {
         git clone $SCOOP_GIT_REPO_GIT $SCOOP_APP_DIR
 
         git clone $SCOOP_MAIN_BUCKET_REPO_GIT $SCOOP_MAIN_BUCKET_DIR
+        git clone $SCOOP_BASE_BUCKET_REPO_GIT $SCOOP_BASE_BUCKET_DIR
     } else {
         # Download scoop zip from GitHub
         Write-InstallInfo 'Downloading...'
@@ -444,6 +445,10 @@ function Install-Scoop {
         # 2. download scoop main bucket
         $scoopMainZipfile = "$SCOOP_MAIN_BUCKET_DIR\scoop-main.zip"
         $downloader.downloadFile($SCOOP_MAIN_BUCKET_REPO, $scoopMainZipfile)
+
+        # 3. download base bucket
+        $scoopBaseZipfile = "$SCOOP_BASE_BUCKET_DIR\scoop-base.zip"
+        $downloader.downloadFile($SCOOP_BASE_BUCKET_REPO, $scoopBaseZipfile)
 
         # Extract files from downloaded zip
         Write-InstallInfo 'Extracting...'
@@ -458,9 +463,14 @@ function Install-Scoop {
         Expand-ZipArchive $scoopMainZipfile $scoopMainUnzipTempDir
         Copy-Item "$scoopMainUnzipTempDir\Main-*\*" $SCOOP_MAIN_BUCKET_DIR -Recurse -Force
 
+        # 3. extract base bucket
+        $scoopBaseUnzipTempDir = "$SCOOP_BASE_BUCKET_DIR\_tmp"
+        Expand-ZipArchive $scoopBaseZipfile $scoopBaseUnzipTempDir
+        Copy-Item "$scoopBaseUnzipTempDir\Base-*\*" $SCOOP_BASE_BUCKET_DIR -Recurse -Force
+
         # Cleanup
-        Remove-Item $scoopUnzipTempDir, $scoopMainUnzipTempDir -Recurse -Force
-        Remove-Item $scoopZipfile, $scoopMainZipfile
+        Remove-Item $scoopUnzipTempDir, $scoopMainUnzipTempDir, $scoopBaseUnzipTempDir -Recurse -Force
+        Remove-Item $scoopZipfile, $scoopMainZipfile, $scoopBaseZipfile
     }
 
     Import-ScoopShim
@@ -504,6 +514,8 @@ $SCOOP_PACKAGE_REPO_GIT = 'https://github.com/ScoopInstaller/Scoop'
 $SCOOP_PACKAGE_REPO = "$SCOOP_PACKAGE_REPO_GIT/archive/master.zip"
 $SCOOP_MAIN_BUCKET_REPO_GIT = 'https://github.com/ScoopInstaller/Main'
 $SCOOP_MAIN_BUCKET_REPO = "$SCOOP_MAIN_BUCKET_REPO_GIT/archive/master.zip"
+$SCOOP_BASE_BUCKET_REPO_GIT = 'https://github.com/shovel-org/Base'
+$SCOOP_BASE_BUCKET_REPO = "$SCOOP_BASE_BUCKET_REPO_GIT/archive/main.zip"
 
 $GIT_INSTALLED = [bool] (Get-Command 'git' -ErrorAction 'SilentlyContinue')
 
