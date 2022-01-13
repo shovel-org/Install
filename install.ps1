@@ -444,9 +444,11 @@ function Add-DefaultConfig {
         }
     }
 
-    # save current datatime to lastUpdate
-    Add-Config -Name 'lastUpdate' -Value ([System.DateTime]::Now.ToString('o')) | Out-Null
-    Add-Config -Name 'SCOOP_BRANCH' -Value $ScoopBranch | Out-Null
+    # Save current datatime to lastUpdate
+    Add-Config -Name 'lastUpdate' -Value ('258|' + [System.DateTime]::Now.ToString('o')) | Out-Null
+    Add-Config -Name 'SCOOP_REPO' -Value "${SCOOP_REPO}" | Out-Null
+    Add-Config -Name 'SCOOP_BRANCH' -Value $SCOOP_BRANCH | Out-Null
+    Add-Config -Name 'MSIEXTRACT_USE_LESSMSI' -Value $true | Out-Null
     if ($SkipRobocopy) {
         Add-Config -Name 'core.preferMoveItem' -Value $true | Out-Null
     }
