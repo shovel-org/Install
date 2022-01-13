@@ -126,7 +126,7 @@ function Test-ValidateParameter {
     }
 
     if ($ProxyUseDefaultCredentials -and $null -ne $ProxyCredential) {
-        Deny-Install "ProxyUseDefaultCredentials is conflict with ProxyCredential. Do not use the -ProxyCredential and -ProxyUseDefaultCredentials together."
+        Deny-Install 'ProxyUseDefaultCredentials is conflict with ProxyCredential. Do not use the -ProxyCredential and -ProxyUseDefaultCredentials together.'
     }
 }
 
@@ -327,6 +327,7 @@ powershell -noprofile -ex unrestricted `"& '$path' %args%;exit `$lastexitcode`"
     # Make scoop accessible from bash or other posix shell
     Out-UTF8File -LiteralPath $shim -Content "#!/bin/sh`npowershell.exe -ex unrestricted `"$path`" `"$@`"" -LineEnd "`n"
 
+    # Adopt shovel commands
     Get-ChildItem $SCOOP_SHIMS_DIR -Filter 'scoop.*' |
         Copy-Item -Destination { Join-Path $_.Directory.FullName (($_.BaseName -replace 'scoop', 'shovel') + $_.Extension) }
 }
@@ -347,11 +348,9 @@ function Add-ShimsDirToPath {
 
     if ($userEnvPath -notmatch [Regex]::Escape($SCOOP_SHIMS_DIR)) {
         $h = (Get-PSProvider 'FileSystem').Home
-        if (!$h.EndsWith('\')) {
-            $h += '\'
-        }
+        if (!$h.EndsWith('\')) { $h += '\' }
 
-        if (!($h -eq '\')) {
+        if ($h -ne '\') {
             $friendlyPath = "$SCOOP_SHIMS_DIR" -Replace ([Regex]::Escape($h)), '~\'
             Write-InstallInfo "Adding $friendlyPath to your path."
         } else {
@@ -557,6 +556,7 @@ function Install-Scoop {
 
     Write-InstallInfo 'Scoop was installed successfully!' -ForegroundColor 'DarkGreen'
     Write-InstallInfo "Type 'scoop help' for instructions."
+    Write-InstallInfo 'For the most optimal experience you should use PowerShell Core (7+).'
 }
 #endregion Functions
 
