@@ -455,17 +455,10 @@ function Add-DefaultConfig {
     }
 }
 
-function Install-Scoop {
-    Write-InstallInfo 'Initializing...'
-    # Validate install parameters
-    Test-ValidateParameter
-    # Check prerequisites
-    Test-Prerequisite
-    # Enable TLS 1.2
-    Optimize-SecurityProtocol
-
+function Get-AllRequiredFile {
     # Scoop main bucket directory
     $SCOOP_MAIN_BUCKET_DIR = "$SCOOP_BUCKETS_DIR\main"
+    $SCOOP_BASE_BUCKET_DIR = "$SCOOP_BUCKETS_DIR\Base"
 
     $SCOOP_APP_DIR, $SCOOP_BUCKETS_DIR, $SCOOP_MAIN_BUCKET_DIR | ForEach-Object {
         if (!(Test-Path -LiteralPath $_ -PathType 'Container')) {
@@ -480,6 +473,7 @@ function Install-Scoop {
         git clone $SCOOP_MAIN_BUCKET_REPO_GIT $SCOOP_MAIN_BUCKET_DIR
         git clone $SCOOP_BASE_BUCKET_REPO_GIT $SCOOP_BASE_BUCKET_DIR
     } else {
+        Write-InstallInfo 'Downloading...'
         # Download scoop zip from GitHub
         $downloader = Get-Downloader
 
@@ -539,7 +533,21 @@ function Install-Scoop {
         Remove-Item $scoopUnzipTempDir, $scoopMainUnzipTempDir, $scoopBaseUnzipTempDir -Recurse -Force
         Remove-Item $scoopZipfile, $scoopMainZipfile, $scoopBaseZipfile
     }
+}
 
+function Install-Scoop {
+    Write-InstallInfo 'Initializing...'
+    # Validate install parameters
+    Test-ValidateParameter
+    # Check prerequisites
+    Test-Prerequisite
+    # Enable TLS 1.2
+    Optimize-SecurityProtocol
+
+    # Prepare all the needed files. Download and extract/pull
+    Get-AllRequiredFile
+
+    # Create the scoop shim
     Import-ScoopShim
 
     # Finially ensure scoop shims is in the PATH
