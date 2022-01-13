@@ -471,67 +471,66 @@ function Get-AllRequiredFile {
 
         git clone $SCOOP_MAIN_BUCKET_REPO_GIT $SCOOP_MAIN_BUCKET_DIR
         git clone $SCOOP_BASE_BUCKET_REPO_GIT $SCOOP_BASE_BUCKET_DIR
-    } else {
-        Write-InstallInfo 'Downloading...'
-        # Download scoop zip from GitHub
-        $downloader = Get-Downloader
-
-        # 1. download scoop
-        $cachedCore = "$INSTALLER_DIR\Core.zip"
-        $scoopZipfile = "$SCOOP_APP_DIR\Core.zip"
-        if (Test-Path -LiteralPath $cachedCore -PathType 'Leaf') {
-            Write-InstallInfo "Loading Core from '$cachedCore'"
-            Copy-Item $cachedCore $scoopZipfile
-        } else {
-            Write-InstallInfo 'Downloading Core'
-            $downloader.DownloadFile($SCOOP_PACKAGE_REPO, $scoopZipfile)
-        }
-
-        # 2. download scoop main bucket
-        $cachedMain = "$INSTALLER_DIR\main.zip"
-        $scoopMainZipfile = "$SCOOP_MAIN_BUCKET_DIR\main.zip"
-        if (Test-Path -LiteralPath $cachedMain -PathType 'Leaf') {
-            Write-InstallInfo "Loading Main bucket from '$cachedMain'"
-            Copy-Item $cachedMain $scoopMainZipfile
-        } else {
-            Write-InstallInfo 'Downloading Main bucket'
-            $downloader.DownloadFile($SCOOP_MAIN_BUCKET_REPO, $scoopMainZipfile)
-        }
-
-        # 3. download base bucket
-        $cachedBased = "$INSTALLER_DIR\Base.zip"
-        $scoopBaseZipfile = "$SCOOP_BASE_BUCKET_DIR\Base.zip"
-        if (Test-Path -LiteralPath $cachedBased -PathType 'Leaf') {
-            Write-InstallInfo "Loading Base bucket from '$cachedBased'"
-            Copy-Item $cachedBased $scoopBaseZipfile
-        } else {
-            Write-InstallInfo 'Downloading Base bucket'
-            $downloader.DownloadFile($SCOOP_BASE_BUCKET_REPO, $scoopBaseZipfile)
-        }
-
-        # Extract files from downloaded zip
-        Write-InstallInfo 'Extracting...'
-
-        #TODO: Move instead of Copy
-        # 1. extract scoop
-        $scoopUnzipTempDir = "$SCOOP_APP_DIR\_tmp"
-        Expand-ZipArchive $scoopZipfile $scoopUnzipTempDir
-        Copy-Item "$scoopUnzipTempDir\Scoop-$ScoopBranch\*" $SCOOP_APP_DIR -Recurse -Force
-
-        # 2. extract scoop main bucket
-        $scoopMainUnzipTempDir = "$SCOOP_MAIN_BUCKET_DIR\_tmp"
-        Expand-ZipArchive $scoopMainZipfile $scoopMainUnzipTempDir
-        Copy-Item "$scoopMainUnzipTempDir\Main-*\*" $SCOOP_MAIN_BUCKET_DIR -Recurse -Force
-
-        # 3. extract base bucket
-        $scoopBaseUnzipTempDir = "$SCOOP_BASE_BUCKET_DIR\_tmp"
-        Expand-ZipArchive $scoopBaseZipfile $scoopBaseUnzipTempDir
-        Copy-Item "$scoopBaseUnzipTempDir\Base-*\*" $SCOOP_BASE_BUCKET_DIR -Recurse -Force
-
-        # Cleanup
-        Remove-Item $scoopUnzipTempDir, $scoopMainUnzipTempDir, $scoopBaseUnzipTempDir -Recurse -Force
-        Remove-Item $scoopZipfile, $scoopMainZipfile, $scoopBaseZipfile
+        return
     }
+
+    $downloader = Get-Downloader
+
+    # 1. download scoop
+    $cachedCore = "$INSTALLER_DIR\Core.zip"
+    $scoopZipfile = "$SCOOP_APP_DIR\Core.zip"
+    if (Test-Path -LiteralPath $cachedCore -PathType 'Leaf') {
+        Write-InstallInfo "Loading Core from '$cachedCore'"
+        Copy-Item $cachedCore $scoopZipfile
+    } else {
+        Write-InstallInfo 'Downloading Core'
+        $downloader.DownloadFile($SCOOP_PACKAGE_REPO, $scoopZipfile)
+    }
+
+    # 2. download scoop main bucket
+    $cachedMain = "$INSTALLER_DIR\main.zip"
+    $scoopMainZipfile = "$SCOOP_MAIN_BUCKET_DIR\main.zip"
+    if (Test-Path -LiteralPath $cachedMain -PathType 'Leaf') {
+        Write-InstallInfo "Loading Main bucket from '$cachedMain'"
+        Copy-Item $cachedMain $scoopMainZipfile
+    } else {
+        Write-InstallInfo 'Downloading Main bucket'
+        $downloader.DownloadFile($SCOOP_MAIN_BUCKET_REPO, $scoopMainZipfile)
+    }
+
+    # 3. download base bucket
+    $cachedBased = "$INSTALLER_DIR\Base.zip"
+    $scoopBaseZipfile = "$SCOOP_BASE_BUCKET_DIR\Base.zip"
+    if (Test-Path -LiteralPath $cachedBased -PathType 'Leaf') {
+        Write-InstallInfo "Loading Base bucket from '$cachedBased'"
+        Copy-Item $cachedBased $scoopBaseZipfile
+    } else {
+        Write-InstallInfo 'Downloading Base bucket'
+        $downloader.DownloadFile($SCOOP_BASE_BUCKET_REPO, $scoopBaseZipfile)
+    }
+
+    # Extract files from downloaded zip
+    Write-InstallInfo 'Extracting...'
+
+    #TODO: Move instead of Copy
+    # 1. extract scoop
+    $scoopUnzipTempDir = "$SCOOP_APP_DIR\_tmp"
+    Expand-ZipArchive $scoopZipfile $scoopUnzipTempDir
+    Copy-Item "$scoopUnzipTempDir\Scoop-$ScoopBranch\*" $SCOOP_APP_DIR -Recurse -Force
+
+    # 2. extract scoop main bucket
+    $scoopMainUnzipTempDir = "$SCOOP_MAIN_BUCKET_DIR\_tmp"
+    Expand-ZipArchive $scoopMainZipfile $scoopMainUnzipTempDir
+    Copy-Item "$scoopMainUnzipTempDir\Main-*\*" $SCOOP_MAIN_BUCKET_DIR -Recurse -Force
+
+    # 3. extract base bucket
+    $scoopBaseUnzipTempDir = "$SCOOP_BASE_BUCKET_DIR\_tmp"
+    Expand-ZipArchive $scoopBaseZipfile $scoopBaseUnzipTempDir
+    Copy-Item "$scoopBaseUnzipTempDir\Base-*\*" $SCOOP_BASE_BUCKET_DIR -Recurse -Force
+
+    # Cleanup
+    Remove-Item $scoopUnzipTempDir, $scoopMainUnzipTempDir, $scoopBaseUnzipTempDir -Recurse -Force
+    Remove-Item $scoopZipfile, $scoopMainZipfile, $scoopBaseZipfile
 }
 
 function Install-Scoop {
