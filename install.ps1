@@ -563,11 +563,16 @@ function Install-Scoop {
 #region Main
 $NoProxy, $Proxy, $ProxyCredential, $ProxyUseDefaultCredentials, $RunAsAdmin, $SkipRobocopy | Out-Null
 
+if (!$env:USERPROFILE) {
+    if (!$env:HOME) { Deny-Install 'Cannot resolve users home directory. USERPROFILE and HOME environment variables are not set.' }
+
+    $env:USERPROFILE = $env:HOME
+}
+
 # Prepare variables
 $IS_EXECUTED_FROM_IEX = ($null -eq $MyInvocation.MyCommand.Path)
 
-if (!$env:USERPROFILE) { $env:USERPROFILE = $env:HOME }
-
+# Installer script root
 $INSTALLER_DIR = $PSScriptRoot
 
 # Scoop root directory
