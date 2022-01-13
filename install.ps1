@@ -25,24 +25,23 @@
 
 <#
 .SYNOPSIS
-    Scoop installer.
-.DESCRIPTION
-    The installer of Scoop. For details please check the website and wiki.
-
-    Installer support instalation from local zip archives. This is useful when there are network issues. ScoopBranch parameters needs to configured accordingly.
-    Following zips are supported:
-        Core.zip
-        Base.zip
-        main.zip
+    Generic installer to install any scoop fork hosted on GitHub.
+    Soon will be fully rebranded to Shovel.
 .PARAMETER ScoopDir
-    Specifies directory to install.
-    Scoop will be installed to '$env:USERPROFILE\scoop' if not specificed.
+    Specifies directory to install. $env:SCOOP could be used instead.
+    Scoop will be installed to '$env:USERPROFILE\Shovel' if not specificed.
 .PARAMETER ScoopGlobalDir
-    Specifies global app directory.
-    Global app will be installed to '$env:ProgramData\scoop' if not specificed.
+    Specifies global app directory. $env:SCOOP_GLOBAL could be used instead.
+    Global app will be installed to '$env:ProgramData\Shovel' if not specificed.
 .PARAMETER ScoopCacheDir
-    Specifies cache directory.
+    Specifies cache directory. $env:SCOOP_CACHE could be used instead.
     Cache directory will be '$ScoopDir\cache' if not specificed.
+.PARAMETER ScoopRepo
+    Specifies Scoop repository URL. $env:SCOOP_REPO could be used instead.
+    'https://github.com/Ash258/Scoop-Core' will be used when none is provided.
+.PARAMETER ScoopBranch
+    Specific branch of scoop-core to be downloaded. $env:SCOOP_BRANCH could be used instead.
+    'main' will be used if not specificed.
 .PARAMETER NoProxy
     Specifies bypass system proxy or not while installation.
 .PARAMETER Proxy
@@ -53,8 +52,6 @@
     Use the credentials of the current user for the proxy server that is specified by the -Proxy parameter.
 .PARAMETER RunAsAdmin
     Force to run the installer as administrator.
-.PARAMETER ScoopBranch
-    Specifies the core branch to be installed.
 .PARAMETER SkipRobocopy
     Specifies to not check the existence of robocopy.exe.
     Useful for nanocore installations.
@@ -70,12 +67,13 @@ param(
     [String] $ScoopDir,
     [String] $ScoopGlobalDir,
     [String] $ScoopCacheDir,
+    [String] $ScoopRepo,
+    [String] $ScoopBranch = 'main',
     [Switch] $NoProxy,
     [Uri] $Proxy,
     [System.Management.Automation.PSCredential] $ProxyCredential,
     [Switch] $ProxyUseDefaultCredentials,
     [Switch] $RunAsAdmin,
-    [Switch] $ScoopBranch = 'master',
     [Switch] $SkipRobocopy,
     [Switch] $SkipGit
 )
@@ -467,7 +465,7 @@ function Get-AllRequiredFile {
 
     if ($INSTALL_USING_GIT) {
         Write-InstallInfo 'Installing using git'
-        git clone --branch $ScoopBranch $SCOOP_GIT_REPO_GIT $SCOOP_APP_DIR
+        git clone --branch $SCOOP_BRANCH $SCOOP_GIT_REPO_GIT $SCOOP_APP_DIR
 
         git clone $SCOOP_MAIN_BUCKET_REPO_GIT $SCOOP_MAIN_BUCKET_DIR
         git clone $SCOOP_BASE_BUCKET_REPO_GIT $SCOOP_BASE_BUCKET_DIR
@@ -516,7 +514,7 @@ function Get-AllRequiredFile {
     # 1. extract scoop
     $scoopUnzipTempDir = "$SCOOP_APP_DIR\_tmp"
     Expand-ZipArchive $scoopZipfile $scoopUnzipTempDir
-    Copy-Item "$scoopUnzipTempDir\Scoop-$ScoopBranch\*" $SCOOP_APP_DIR -Recurse -Force
+    Copy-Item "$scoopUnzipTempDir\$SCOOP_PACKAGE_REPO_RCHIVE_NAME-$SCOOP_BRANCH\*" $SCOOP_APP_DIR -Recurse -Force
 
     # 2. extract scoop main bucket
     $scoopMainUnzipTempDir = "$SCOOP_MAIN_BUCKET_DIR\_tmp"
@@ -574,6 +572,12 @@ $IS_EXECUTED_FROM_IEX = ($null -eq $MyInvocation.MyCommand.Path)
 # Installer script root
 $INSTALLER_DIR = $PSScriptRoot
 
+# TODO: Change and rebrand
+# Scoop repository
+$SCOOP_REPO = $ScoopRepo, $env:SCOOP_REPO, 'https://github.com/Ash258/Scoop-Core' | Where-Object { -not [String]::IsNullOrEmpty($_) } | Select-Object -First 1
+$SCOOP_REPO = $SCOOP_REPO -replace '\.git$'
+# Scoop branch
+$SCOOP_BRANCH = $ScoopBranch, $env:SCOOP_BRANCH, 'main' | Where-Object { -not [String]::IsNullOrEmpty($_) } | Select-Object -First 1
 # Scoop root directory
 $SCOOP_DIR = $ScoopDir, $env:SCOOP, "$env:USERPROFILE\Shovel" | Where-Object { -not [String]::IsNullOrEmpty($_) } | Select-Object -First 1
 # Scoop global apps directory
@@ -584,15 +588,16 @@ $SCOOP_CACHE_DIR = $ScoopCacheDir, $env:SCOOP_CACHE, "$SCOOP_DIR\cache" | Where-
 $SCOOP_SHIMS_DIR = "$SCOOP_DIR\shims"
 # Scoop itself directory
 $SCOOP_APP_DIR = "$SCOOP_DIR\apps\scoop\current"
-# Scoop main bucket directory
+# Scoop buckets directory
 $SCOOP_BUCKETS_DIR = "$SCOOP_DIR\buckets"
 # Scoop config file location
-$SCOOP_CONFIG_HOME = $env:XDG_CONFIG_HOME, "$env:USERPROFILE\.config" | Select-Object -First 1
+$SCOOP_CONFIG_HOME = $env:XDG_CONFIG_HOME, "$env:USERPROFILE\.config" | Where-Object { -not [String]::IsNullOrEmpty($_) } | Select-Object -First 1
 $SCOOP_CONFIG_FILE = "$SCOOP_CONFIG_HOME\scoop\config.json"
 
-# TODO: Use a specific version of Scoop and the main bucket
-$SCOOP_PACKAGE_REPO_GIT = 'https://github.com/ScoopInstaller/Scoop'
-$SCOOP_PACKAGE_REPO = "$SCOOP_PACKAGE_REPO_GIT/archive/$ScoopBranch.zip"
+$SCOOP_REPO_ARCHIVE_NAME = ($SCOOP_REPO -split '/')[-1]
+$SCOOP_PACKAGE_REPO_GIT = $SCOOP_REPO
+$SCOOP_PACKAGE_REPO = "$SCOOP_PACKAGE_REPO_GIT/archive/$SCOOP_BRANCH.zip"
+$SCOOP_PACKAGE_REPO_RCHIVE_NAME = ($SCOOP_REPO -split '/')[-1]
 $SCOOP_MAIN_BUCKET_REPO_GIT = 'https://github.com/ScoopInstaller/Main'
 $SCOOP_MAIN_BUCKET_REPO = "$SCOOP_MAIN_BUCKET_REPO_GIT/archive/master.zip"
 $SCOOP_BASE_BUCKET_REPO_GIT = 'https://github.com/shovel-org/Base'
