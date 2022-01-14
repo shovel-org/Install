@@ -405,7 +405,7 @@ function Add-Config {
     } else {
         $baseDir = Split-Path -Path $SCOOP_CONFIG_FILE
         if (!(Test-Path -LiteralPath $baseDir -PathType 'Container')) {
-            New-Item -LiteralPath $baseDir -Type 'Directory' | Out-Null
+            New-Item -Path $baseDir -Type 'Directory' | Out-Null
         }
 
         $scoopConfig = New-Object PSObject
@@ -423,38 +423,38 @@ function Add-Config {
 
 function Add-DefaultConfig {
     # If user-level SCOOP env not defined, save to rootPath
-    if (!(Get-Env 'SCOOP')) {
-        if ($SCOOP_DIR -ne "$env:USERPROFILE\scoop") {
-            Add-Config -Name 'rootPath' -Value $SCOOP_DIR | Out-Null
-        }
-    }
+    # if (!(Get-Env 'SCOOP')) {
+    #     if ($SCOOP_DIR -ne "$env:USERPROFILE\scoop") {
+    #         # Add-Config -Name 'rootPath' -Value $SCOOP_DIR | Out-Null
+    #     }
+    # }
 
     # Use system SCOOP_GLOBAL, or set system SCOOP_GLOBAL
     # with $env:SCOOP_GLOBAL if RunAsAdmin, otherwise save to globalPath
-    if (!(Get-Env 'SCOOP_GLOBAL' -global)) {
-        if ((Test-IsAdministrator) -and $env:SCOOP_GLOBAL) {
-            [Environment]::SetEnvironmentVariable('SCOOP_GLOBAL', $env:SCOOP_GLOBAL, 'Machine')
-        } else {
-            if ($SCOOP_GLOBAL_DIR -ne "$env:ProgramData\scoop") {
-                Add-Config -Name 'globalPath' -Value $SCOOP_GLOBAL_DIR | Out-Null
-            }
-        }
-    }
+    # if (!(Get-Env 'SCOOP_GLOBAL' -global)) {
+    #     if ((Test-IsAdministrator) -and $env:SCOOP_GLOBAL) {
+    #         [Environment]::SetEnvironmentVariable('SCOOP_GLOBAL', $env:SCOOP_GLOBAL, 'Machine')
+    #     } else {
+    #         if ($SCOOP_GLOBAL_DIR -ne "$env:ProgramData\scoop") {
+    #             # Add-Config -Name 'globalPath' -Value $SCOOP_GLOBAL_DIR | Out-Null
+    #         }
+    #     }
+    # }
 
     # Use system SCOOP_CACHE, or set system SCOOP_CACHE
     # with $env:SCOOP_CACHE if RunAsAdmin, otherwise save to cachePath
-    if (!(Get-Env 'SCOOP_CACHE' -global)) {
-        if ((Test-IsAdministrator) -and $env:SCOOP_CACHE) {
-            [Environment]::SetEnvironmentVariable('SCOOP_CACHE', $env:SCOOP_CACHE, 'Machine')
-        } else {
-            if ($SCOOP_CACHE_DIR -ne "$SCOOP_DIR\cache") {
-                Add-Config -Name 'cachePath' -Value $SCOOP_CACHE_DIR | Out-Null
-            }
-        }
-    }
+    # if (!(Get-Env 'SCOOP_CACHE' -global)) {
+    #     if ((Test-IsAdministrator) -and $env:SCOOP_CACHE) {
+    #         [Environment]::SetEnvironmentVariable('SCOOP_CACHE', $env:SCOOP_CACHE, 'Machine')
+    #     } else {
+    #         if ($SCOOP_CACHE_DIR -ne "$SCOOP_DIR\cache") {
+    #             # Add-Config -Name 'cachePath' -Value $SCOOP_CACHE_DIR | Out-Null
+    #         }
+    #     }
+    # }
 
     # Save current datatime to lastUpdate
-    Add-Config -Name 'lastUpdate' -Value ('258|' + [System.DateTime]::Now.ToString('o')) | Out-Null
+    Add-Config -Name 'lastUpdate' -Value ([System.DateTime]::Now.AddHours(1).ToString('258|yyyy-MM-dd HH:mm:ss')) | Out-Null
     Add-Config -Name 'SCOOP_REPO' -Value "${SCOOP_REPO}" | Out-Null
     Add-Config -Name 'SCOOP_BRANCH' -Value $SCOOP_BRANCH | Out-Null
     Add-Config -Name 'MSIEXTRACT_USE_LESSMSI' -Value $true | Out-Null
@@ -464,13 +464,12 @@ function Add-DefaultConfig {
 }
 
 function Get-AllRequiredFile {
-    # Scoop main bucket directory
     $SCOOP_MAIN_BUCKET_DIR = "${SCOOP_BUCKETS_DIR}\main"
     $SCOOP_BASE_BUCKET_DIR = "${SCOOP_BUCKETS_DIR}\Base"
 
-    $SCOOP_APP_DIR, $SCOOP_BUCKETS_DIR, $SCOOP_MAIN_BUCKET_DIR | ForEach-Object {
+    $SCOOP_APP_DIR, $SCOOP_BUCKETS_DIR, $SCOOP_MAIN_BUCKET_DIR, $SCOOP_BASE_BUCKET_DIR | ForEach-Object {
         if (!(Test-Path -LiteralPath $_ -PathType 'Container')) {
-            New-Item -LiteralPath $_ -ItemType 'Directory' | Out-Null
+            New-Item -Path $_ -ItemType 'Directory' | Out-Null
         }
     }
 
