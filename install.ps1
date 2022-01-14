@@ -358,7 +358,7 @@ function Add-ShimsDirToPath {
         if (!$h.EndsWith('\')) { $h += '\' }
 
         if ($h -ne '\') {
-            $friendlyPath = "$SCOOP_SHIMS_DIR" -Replace ([Regex]::Escape($h)), '~\'
+            $friendlyPath = $SCOOP_SHIMS_DIR -replace ([Regex]::Escape($h)), '~\'
             Write-InstallInfo "Adding $friendlyPath to your path."
         } else {
             Write-InstallInfo "Adding $SCOOP_SHIMS_DIR to your path."
@@ -368,6 +368,18 @@ function Add-ShimsDirToPath {
         [System.Environment]::SetEnvironmentVariable('PATH', "$SCOOP_SHIMS_DIR;$userEnvPath", 'User')
         # For current session
         $env:PATH = "$SCOOP_SHIMS_DIR;$env:PATH"
+    }
+
+    # Get $env:PATH of machine
+    $globalEnvPath = Get-Env 'PATH' -global
+    if ($globalEnvPath -notmatch [Regex]::Escape($SCOOP_GLOBAL_SHIMS_DIR)) {
+        if (Test-IsAdministrator) {
+            Write-InstallInfo "Adding ${SCOOP_GLOBAL_SHIMS_DIR} to system-wide PATH."
+            # For future sessions
+            [System.Environment]::SetEnvironmentVariable('PATH', "${SCOOP_GLOBAL_SHIMS_DIR};${globalEnvPath}", 'Machine')
+            # For current session
+            $env:PATH = "${env:PATH};${SCOOP_GLOBAL_SHIMS_DIR}"
+        }
     }
 }
 
@@ -596,6 +608,8 @@ $SCOOP_GLOBAL_DIR = $ScoopGlobalDir, $env:SCOOP_GLOBAL, "${env:ProgramData}\Shov
 $SCOOP_CACHE_DIR = $ScoopCacheDir, $env:SCOOP_CACHE, "${SCOOP_DIR}\cache" | Where-Object { -not [String]::IsNullOrEmpty($_) } | Select-Object -First 1
 # Scoop shims directory
 $SCOOP_SHIMS_DIR = "${SCOOP_DIR}\shims"
+# Scoop global shims directory
+$SCOOP_GLOBAL_SHIMS_DIR = "${SCOOP_GLOBAL_DIR}\shims"
 # Scoop itself directory
 $SCOOP_APP_DIR = "${SCOOP_DIR}\apps\scoop\current"
 # Scoop buckets directory
