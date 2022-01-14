@@ -434,40 +434,22 @@ function Add-Config {
 }
 
 function Add-DefaultConfig {
-    # If user-level SCOOP env not defined, save to rootPath
-    # if (!(Get-Env 'SCOOP')) {
-    #     if ($SCOOP_DIR -ne "$env:USERPROFILE\scoop") {
-    #         # Add-Config -Name 'rootPath' -Value $SCOOP_DIR | Out-Null
-    #     }
-    # }
+    $user = if (Test-IsAdministrator) { 'Machine' } else { 'User' }
 
-    # Use system SCOOP_GLOBAL, or set system SCOOP_GLOBAL
-    # with $env:SCOOP_GLOBAL if RunAsAdmin, otherwise save to globalPath
-    # if (!(Get-Env 'SCOOP_GLOBAL' -global)) {
-    #     if ((Test-IsAdministrator) -and $env:SCOOP_GLOBAL) {
-    #         [Environment]::SetEnvironmentVariable('SCOOP_GLOBAL', $env:SCOOP_GLOBAL, 'Machine')
-    #     } else {
-    #         if ($SCOOP_GLOBAL_DIR -ne "$env:ProgramData\scoop") {
-    #             # Add-Config -Name 'globalPath' -Value $SCOOP_GLOBAL_DIR | Out-Null
-    #         }
-    #     }
-    # }
+    if (!(Get-Env 'SCOOP')) {
+        [Environment]::SetEnvironmentVariable('SCOOP', $SCOOP_DIR, 'User')
+    }
 
-    # Use system SCOOP_CACHE, or set system SCOOP_CACHE
-    # with $env:SCOOP_CACHE if RunAsAdmin, otherwise save to cachePath
-    # if (!(Get-Env 'SCOOP_CACHE' -global)) {
-    #     if ((Test-IsAdministrator) -and $env:SCOOP_CACHE) {
-    #         [Environment]::SetEnvironmentVariable('SCOOP_CACHE', $env:SCOOP_CACHE, 'Machine')
-    #     } else {
-    #         if ($SCOOP_CACHE_DIR -ne "$SCOOP_DIR\cache") {
-    #             # Add-Config -Name 'cachePath' -Value $SCOOP_CACHE_DIR | Out-Null
-    #         }
-    #     }
-    # }
+    if (!(Get-Env 'SCOOP_GLOBAL' -global)) {
+        [Environment]::SetEnvironmentVariable('SCOOP_GLOBAL', $SCOOP_GLOBAL_DIR, $user)
+    }
 
-    # Save current datatime to lastUpdate
+    if (!(Get-Env 'SCOOP_CACHE' -global) -or !(Get-Env 'SCOOP_CACHE')) {
+        [Environment]::SetEnvironmentVariable('SCOOP_CACHE', $SCOOP_CACHE_DIR, $user)
+    }
+
     Add-Config -Name 'lastUpdate' -Value ([System.DateTime]::Now.AddHours(1).ToString('258|yyyy-MM-dd HH:mm:ss')) | Out-Null
-    Add-Config -Name 'SCOOP_REPO' -Value "${SCOOP_REPO}" | Out-Null
+    Add-Config -Name 'SCOOP_REPO' -Value $SCOOP_REPO | Out-Null
     Add-Config -Name 'SCOOP_BRANCH' -Value $SCOOP_BRANCH | Out-Null
     Add-Config -Name 'MSIEXTRACT_USE_LESSMSI' -Value $true | Out-Null
     if ($SkipRobocopy) {
@@ -594,6 +576,10 @@ $IS_EXECUTED_FROM_IEX = ($null -eq $MyInvocation.MyCommand.Path)
 # Installer script root
 $INSTALLER_DIR = $PSScriptRoot
 
+$SCOOP_DEFAULT_DIR = "${env:USERPROFILE}\Shovel"
+$SCOOP_GLOBAL_DEFAULT_DIR = "${env:ProgramData}\Shovel"
+$SCOOP_CACHE_DEFAULT_DIR = "${SCOOP_DEFAULT_DIR}\cache"
+
 # TODO: Change and rebrand
 # Scoop repository
 $SCOOP_REPO = $ScoopRepo, $env:SCOOP_REPO, 'https://github.com/Ash258/Scoop-Core' | Where-Object { -not [String]::IsNullOrEmpty($_) } | Select-Object -First 1
@@ -601,9 +587,9 @@ $SCOOP_REPO = $SCOOP_REPO -replace '\.git$'
 # Scoop branch
 $SCOOP_BRANCH = $ScoopBranch, $env:SCOOP_BRANCH, 'main' | Where-Object { -not [String]::IsNullOrEmpty($_) } | Select-Object -First 1
 # Scoop root directory
-$SCOOP_DIR = $ScoopDir, $env:SCOOP, "${env:USERPROFILE}\Shovel" | Where-Object { -not [String]::IsNullOrEmpty($_) } | Select-Object -First 1
+$SCOOP_DIR = $ScoopDir, $env:SCOOP, $SCOOP_DEFAULT_DIR | Where-Object { -not [String]::IsNullOrEmpty($_) } | Select-Object -First 1
 # Scoop global apps directory
-$SCOOP_GLOBAL_DIR = $ScoopGlobalDir, $env:SCOOP_GLOBAL, "${env:ProgramData}\Shovel" | Where-Object { -not [String]::IsNullOrEmpty($_) } | Select-Object -First 1
+$SCOOP_GLOBAL_DIR = $ScoopGlobalDir, $env:SCOOP_GLOBAL, $SCOOP_GLOBAL_DEFAULT_DIR | Where-Object { -not [String]::IsNullOrEmpty($_) } | Select-Object -First 1
 # Scoop cache directory
 $SCOOP_CACHE_DIR = $ScoopCacheDir, $env:SCOOP_CACHE, "${SCOOP_DIR}\cache" | Where-Object { -not [String]::IsNullOrEmpty($_) } | Select-Object -First 1
 # Scoop shims directory
