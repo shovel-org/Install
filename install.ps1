@@ -438,14 +438,17 @@ function Add-DefaultConfig {
 
     if (!(Get-Env 'SCOOP')) {
         [Environment]::SetEnvironmentVariable('SCOOP', $SCOOP_DIR, 'User')
+        $env:SCOOP = $SCOOP_DIR
     }
 
     if (!(Get-Env 'SCOOP_GLOBAL' -global)) {
         [Environment]::SetEnvironmentVariable('SCOOP_GLOBAL', $SCOOP_GLOBAL_DIR, $user)
+        $env:SCOOP_GLOBAL = $SCOOP_GLOBAL_DIR
     }
 
     if (!(Get-Env 'SCOOP_CACHE' -global) -or !(Get-Env 'SCOOP_CACHE')) {
         [Environment]::SetEnvironmentVariable('SCOOP_CACHE', $SCOOP_CACHE_DIR, $user)
+        $env:SCOOP_CACHE = $SCOOP_CACHE_DIR
     }
 
     Add-Config -Name 'lastUpdate' -Value ([System.DateTime]::Now.AddHours(1).ToString('258|yyyy-MM-dd HH:mm:ss')) | Out-Null
