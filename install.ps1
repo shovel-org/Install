@@ -397,18 +397,20 @@ function Use-Config {
 
 function Add-Config {
     param (
-        [Parameter(Mandatory = $True, Position = 0)]
+        [Parameter(Mandatory, Position = 0)]
         [String] $Name,
-        [Parameter(Mandatory = $True, Position = 1)]
+        [Parameter(Mandatory, Position = 1)]
         [String] $Value
     )
 
     $scoopConfig = Use-Config
 
+    # Cast to boolean
+    if (($Value -eq [bool]::TrueString) -or ($Value -eq [bool]::FalseString)) {
+        $Value = [System.Convert]::ToBoolean($Value)
+    }
+
     if ($scoopConfig -is [System.Management.Automation.PSObject]) {
-        if ($Value -eq [bool]::TrueString -or $Value -eq [bool]::FalseString) {
-            $Value = [System.Convert]::ToBoolean($Value)
-        }
         if ($null -eq $scoopConfig.$Name) {
             $scoopConfig | Add-Member -MemberType 'NoteProperty' -Name $Name -Value $Value
         } else {
