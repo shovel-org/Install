@@ -352,6 +352,7 @@ function Get-Env {
 function Add-ShimsDirToPath {
     # Get $env:PATH of current user
     $userEnvPath = Get-Env 'PATH'
+    $newUserEnvPath = "$SCOOP_SHIMS_DIR;$userEnvPath"
 
     if ($userEnvPath -notmatch [Regex]::Escape($SCOOP_SHIMS_DIR)) {
         $h = (Get-PSProvider 'FileSystem').Home
@@ -365,21 +366,32 @@ function Add-ShimsDirToPath {
         }
 
         # For future sessions
-        [System.Environment]::SetEnvironmentVariable('PATH', "$SCOOP_SHIMS_DIR;$userEnvPath", 'User')
+        [System.Environment]::SetEnvironmentVariable('PATH', $userEnvPath, 'User')
         # For current session
-        $env:PATH = "$SCOOP_SHIMS_DIR;$env:PATH"
+        $env:PATH = $userEnvPath
     }
 
     # Get $env:PATH of machine
     $globalEnvPath = Get-Env 'PATH' -global
+    $newGlobalEnvPath = "${SCOOP_GLOBAL_SHIMS_DIR};${globalEnvPath}"
+
     if ($globalEnvPath -notmatch [Regex]::Escape($SCOOP_GLOBAL_SHIMS_DIR)) {
         if (Test-IsAdministrator) {
             Write-InstallInfo "Adding ${SCOOP_GLOBAL_SHIMS_DIR} to system-wide PATH."
             # For future sessions
-            [System.Environment]::SetEnvironmentVariable('PATH', "${SCOOP_GLOBAL_SHIMS_DIR};${globalEnvPath}", 'Machine')
+            [System.Environment]::SetEnvironmentVariable('PATH', $newGlobalEnvPath, 'Machine')
             # For current session
-            $env:PATH = "${env:PATH};${SCOOP_GLOBAL_SHIMS_DIR}"
+            $env:PATH = $newGlobalEnvPath
         }
+    }
+
+    # Nanoserver does not have user specific path
+    if ($env:POWERSHELL_DISTRIBUTION_CHANNEL -like '*nanoserver*') {
+        $newGlobalEnvPath = "${SCOOP_SHIMS_DIR};$newGlobalEnvPath"
+        # For future sessions
+        [System.Environment]::SetEnvironmentVariable('PATH', $newGlobalEnvPath, 'Machine')
+        # For current session
+        $env:PATH = $newGlobalEnvPath
     }
 }
 
@@ -400,7 +412,7 @@ function Add-Config {
         [Parameter(Mandatory, Position = 0)]
         [String] $Name,
         [Parameter(Mandatory, Position = 1)]
-        [String] $Value
+        $Value
     )
 
     $scoopConfig = Use-Config
