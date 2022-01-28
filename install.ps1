@@ -92,7 +92,7 @@ function Deny-Install {
         [Int] $errorCode = 1
     )
 
-    Write-InstallInfo -String $message -ForegroundColor DarkRed
+    Write-InstallInfo -String $message -ForegroundColor 'DarkRed'
     Write-InstallInfo 'Abort.'
 
     # Don't abort if invoked with iex that would close the PS session
@@ -129,7 +129,7 @@ function Test-Prerequisite {
     }
 
     # Ensure Robocopy.exe is accessible
-    if (!([bool](Get-Command -Name 'robocopy' -ErrorAction SilentlyContinue))) {
+    if (!([bool](Get-Command -Name 'robocopy' -ErrorAction 'SilentlyContinue'))) {
         Deny-Install 'Scoop requires ''C:\Windows\System32\Robocopy.exe'' to work. Please make sure ''C:\Windows\System32'' is in your PATH.'
     }
 
@@ -145,7 +145,7 @@ function Test-Prerequisite {
     }
 
     # Test if scoop is installed, by checking if scoop command exists.
-    if ([bool](Get-Command -Name 'scoop' -ErrorAction SilentlyContinue)) {
+    if ([bool](Get-Command -Name 'scoop' -ErrorAction 'SilentlyContinue')) {
         Deny-Install "Scoop is already installed. Run 'scoop update' to get the latest version."
     }
 }
@@ -227,14 +227,14 @@ function Expand-ZipArchive {
     )
 
     if (!(Test-Path $path)) {
-        Deny-Install "Unzip failed: can't find $path to unzip."
+        Deny-Install "Unzip failed: cannot find $path to unzip."
     }
 
     # Check if the zip file is locked, by antivirus software for example
     $retries = 0
     while ($retries -le 10) {
         if ($retries -eq 10) {
-            Deny-Install "Unzip failed: can't unzip because a process is locking the file."
+            Deny-Install "Unzip failed: cannot unzip because a process is locking the file."
         }
         if (Test-isFileLocked $path) {
             Write-InstallInfo "Waiting for $path to be unlocked by another process... ($retries/10)"
@@ -254,7 +254,7 @@ function Import-ScoopShim {
     $path = "$SCOOP_APP_DIR\bin\scoop.ps1"
 
     if (!(Test-Path $SCOOP_SHIMS_DIR)) {
-        New-Item -Type Directory $SCOOP_SHIMS_DIR | Out-Null
+        New-Item -Type 'Directory' $SCOOP_SHIMS_DIR | Out-Null
     }
 
     # The scoop shim
@@ -267,8 +267,8 @@ function Import-ScoopShim {
 
     # Setting PSScriptRoot in Shim if it is not defined, so the shim doesn't break in PowerShell 2.0
     Write-Output "if (!(Test-Path Variable:PSScriptRoot)) { `$PSScriptRoot = Split-Path `$MyInvocation.MyCommand.Path -Parent }" | Out-File "$shim.ps1" -Encoding utf8
-    Write-Output "`$path = Join-Path `"`$PSScriptRoot`" `"$relativePath`"" | Out-File "$shim.ps1" -Encoding utf8 -Append
-    Write-Output "if (`$MyInvocation.ExpectingInput) { `$input | & `$path @args } else { & `$path @args }" | Out-File "$shim.ps1" -Encoding utf8 -Append
+    Write-Output "`$path = Join-Path `"`$PSScriptRoot`" `"$relativePath`"" | Out-File "$shim.ps1" -Encoding 'utf8' -Append
+    Write-Output "if (`$MyInvocation.ExpectingInput) { `$input | & `$path @args } else { & `$path @args }" | Out-File "$shim.ps1" -Encoding 'utf8' -Append
 
     # Make scoop accessible from cmd.exe
     Write-Output "@echo off
@@ -280,10 +280,10 @@ set args=%args:(=``(%
 set args=%args:)=``)%
 set invalid=`"='
 if !args! == !invalid! ( set args= )
-powershell -noprofile -ex unrestricted `"& '$path' %args%;exit `$lastexitcode`"" | Out-File "$shim.cmd" -Encoding ascii
+powershell -noprofile -ex unrestricted `"& '$path' %args%;exit `$lastexitcode`"" | Out-File "$shim.cmd" -Encoding 'ascii'
 
     # Make scoop accessible from bash or other posix shell
-    Write-Output "#!/bin/sh`npowershell.exe -ex unrestricted `"$path`" `"$@`"" | Out-File $shim -Encoding ascii
+    Write-Output "#!/bin/sh`npowershell.exe -ex unrestricted `"$path`" `"$@`"" | Out-File $shim -Encoding 'ascii'
 }
 
 function Get-Env {
@@ -302,11 +302,9 @@ function Add-ShimsDirToPath {
 
     if ($userEnvPath -notmatch [Regex]::Escape($SCOOP_SHIMS_DIR)) {
         $h = (Get-PSProvider 'FileSystem').Home
-        if (!$h.EndsWith('\')) {
-            $h += '\'
-        }
+        if (!$h.EndsWith('\')) { $h += '\' }
 
-        if (!($h -eq '\')) {
+        if ($h -ne '\') {
             $friendlyPath = "$SCOOP_SHIMS_DIR" -replace ([Regex]::Escape($h)), '~\'
             Write-InstallInfo "Adding $friendlyPath to your path."
         } else {
@@ -326,7 +324,7 @@ function Use-Config {
     }
 
     try {
-        return (Get-Content $SCOOP_CONFIG_FILE -Raw | ConvertFrom-Json -ErrorAction Stop)
+        return (Get-Content $SCOOP_CONFIG_FILE -Raw | ConvertFrom-Json -ErrorAction 'Stop')
     } catch {
         Deny-Install "ERROR loading $SCOOP_CONFIG_FILE`: $($_.Exception.Message)"
     }
@@ -347,7 +345,7 @@ function Add-Config {
             $Value = [System.Convert]::ToBoolean($Value)
         }
         if ($null -eq $scoopConfig.$Name) {
-            $scoopConfig | Add-Member -MemberType NoteProperty -Name $Name -Value $Value
+            $scoopConfig | Add-Member -MemberType 'NoteProperty' -Name $Name -Value $Value
         } else {
             $scoopConfig.$Name = $Value
         }
@@ -358,14 +356,14 @@ function Add-Config {
         }
 
         $scoopConfig = New-Object PSObject
-        $scoopConfig | Add-Member -MemberType NoteProperty -Name $Name -Value $Value
+        $scoopConfig | Add-Member -MemberType 'NoteProperty' -Name $Name -Value $Value
     }
 
     if ($null -eq $Value) {
         $scoopConfig.PSObject.Properties.Remove($Name)
     }
 
-    ConvertTo-Json $scoopConfig | Set-Content $SCOOP_CONFIG_FILE -Encoding ASCII
+    ConvertTo-Json $scoopConfig | Set-Content $SCOOP_CONFIG_FILE -Encoding 'ASCII'
     return $scoopConfig
 }
 
@@ -420,13 +418,13 @@ function Install-Scoop {
     # 1. download scoop
     $scoopZipfile = "$SCOOP_APP_DIR\scoop.zip"
     if (!(Test-Path $SCOOP_APP_DIR)) {
-        New-Item -Type Directory $SCOOP_APP_DIR | Out-Null
+        New-Item -Type 'Directory' $SCOOP_APP_DIR | Out-Null
     }
     $downloader.downloadFile($SCOOP_PACKAGE_REPO, $scoopZipfile)
     # 2. download scoop main bucket
     $scoopMainZipfile = "$SCOOP_MAIN_BUCKET_DIR\scoop-main.zip"
     if (!(Test-Path $SCOOP_MAIN_BUCKET_DIR)) {
-        New-Item -Type Directory $SCOOP_MAIN_BUCKET_DIR | Out-Null
+        New-Item -Type 'Directory' $SCOOP_MAIN_BUCKET_DIR | Out-Null
     }
     $downloader.downloadFile($SCOOP_MAIN_BUCKET_REPO, $scoopMainZipfile)
 
@@ -442,10 +440,8 @@ function Install-Scoop {
     Copy-Item "$scoopMainUnzipTempDir\Main-*\*" $SCOOP_MAIN_BUCKET_DIR -Recurse -Force
 
     # Cleanup
-    Remove-Item $scoopUnzipTempDir -Recurse -Force
-    Remove-Item $scoopZipfile
-    Remove-Item $scoopMainUnzipTempDir -Recurse -Force
-    Remove-Item $scoopMainZipfile
+    Remove-Item $scoopUnzipTempDir, $scoopMainUnzipTempDir -Recurse -Force
+    Remove-Item $scoopZipfile, $scoopMainZipfile
 
     # Create the scoop shim
     Write-InstallInfo 'Creating shim...'
