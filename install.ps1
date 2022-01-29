@@ -301,6 +301,7 @@ function Import-ScoopShim {
     }
 
     # The scoop shim
+    # TODO: Switch
     $shim = "$SCOOP_SHIMS_DIR\scoop"
 
     # Convert to relative path
@@ -605,7 +606,7 @@ $SCOOP_DIR = $ScoopDir, $env:SCOOP, $SCOOP_DEFAULT_DIR | Where-Object { -not [St
 # Scoop global apps directory
 $SCOOP_GLOBAL_DIR = $ScoopGlobalDir, $env:SCOOP_GLOBAL, $SCOOP_GLOBAL_DEFAULT_DIR | Where-Object { -not [String]::IsNullOrEmpty($_) } | Select-Object -First 1
 # Scoop cache directory
-$SCOOP_CACHE_DIR = $ScoopCacheDir, $env:SCOOP_CACHE, "${SCOOP_DIR}\cache" | Where-Object { -not [String]::IsNullOrEmpty($_) } | Select-Object -First 1
+$SCOOP_CACHE_DIR = $ScoopCacheDir, $env:SCOOP_CACHE, $SCOOP_CACHE_DEFAULT_DIR | Where-Object { -not [String]::IsNullOrEmpty($_) } | Select-Object -First 1
 # Scoop shims directory
 $SCOOP_SHIMS_DIR = "${SCOOP_DIR}\shims"
 # Scoop global shims directory
