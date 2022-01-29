@@ -109,7 +109,7 @@ function Test-ValidateParameter {
     }
 
     if ($ProxyUseDefaultCredentials -and $null -ne $ProxyCredential) {
-        Deny-Install "ProxyUseDefaultCredentials is conflict with ProxyCredential. Don't use the -ProxyCredential and -ProxyUseDefaultCredentials together."
+        Deny-Install 'ProxyUseDefaultCredentials conflicts with ProxyCredential. Do not use the -ProxyCredential and -ProxyUseDefaultCredentials together.'
     }
 }
 
@@ -194,15 +194,11 @@ function Get-Downloader {
 }
 
 function Test-isFileLocked {
-    param(
-        [String] $path
-    )
+    param([String] $path)
 
     $file = New-Object System.IO.FileInfo $path
 
-    if (!(Test-Path $path)) {
-        return $false
-    }
+    if (!(Test-Path -LiteralPath $path -PathType 'Leaf')) { return $false }
 
     try {
         $stream = $file.Open(
@@ -226,7 +222,7 @@ function Expand-ZipArchive {
         [String] $to
     )
 
-    if (!(Test-Path $path)) {
+    if (!(Test-Path -LiteralPath $path -PathType 'Leaf')) {
         Deny-Install "Unzip failed: cannot find $path to unzip."
     }
 
@@ -245,16 +241,20 @@ function Expand-ZipArchive {
         }
     }
 
+    Write-InstallInfo "Unziping '$path' to '$to'"
+
     # PowerShell 5+: use Expand-Archive to extract zip files
     Microsoft.PowerShell.Archive\Expand-Archive -Path $path -DestinationPath $to -Force
 }
 
 function Import-ScoopShim {
+    Write-InstallInfo 'Creating shim...'
+
     # The scoop executable
     $path = "$SCOOP_APP_DIR\bin\scoop.ps1"
 
-    if (!(Test-Path $SCOOP_SHIMS_DIR)) {
-        New-Item -Type 'Directory' $SCOOP_SHIMS_DIR | Out-Null
+    if (!(Test-Path -LiteralPath $SCOOP_SHIMS_DIR -PathType 'Container')) {
+        New-Item -Path $SCOOP_SHIMS_DIR -Type 'Directory' | Out-Null
     }
 
     # The scoop shim
@@ -319,22 +319,22 @@ function Add-ShimsDirToPath {
 }
 
 function Use-Config {
-    if (!(Test-Path $SCOOP_CONFIG_FILE)) {
+    if (!(Test-Path -LiteralPath $SCOOP_CONFIG_FILE -PathType 'Leaf')) {
         return $null
     }
 
     try {
         return (Get-Content $SCOOP_CONFIG_FILE -Raw | ConvertFrom-Json -ErrorAction 'Stop')
     } catch {
-        Deny-Install "ERROR loading $SCOOP_CONFIG_FILE`: $($_.Exception.Message)"
+        Deny-Install "ERROR loading ${SCOOP_CONFIG_FILE}: $($_.Exception.Message)"
     }
 }
 
 function Add-Config {
     param (
-        [Parameter(Mandatory = $True, Position = 0)]
+        [Parameter(Mandatory, Position = 0)]
         [String] $Name,
-        [Parameter(Mandatory = $True, Position = 1)]
+        [Parameter(Mandatory, Position = 1)]
         [String] $Value
     )
 
@@ -351,8 +351,8 @@ function Add-Config {
         }
     } else {
         $baseDir = Split-Path -Path $SCOOP_CONFIG_FILE
-        if (!(Test-Path $baseDir)) {
-            New-Item -Type Directory $baseDir | Out-Null
+        if (!(Test-Path -LiteralPath $baseDir -PathType 'Container')) {
+            New-Item -Path $baseDir -Type 'Directory' | Out-Null
         }
 
         $scoopConfig = New-Object PSObject
@@ -444,7 +444,6 @@ function Install-Scoop {
     Remove-Item $scoopZipfile, $scoopMainZipfile
 
     # Create the scoop shim
-    Write-InstallInfo 'Creating shim...'
     Import-ScoopShim
 
     # Finially ensure scoop shims is in the PATH
@@ -454,11 +453,14 @@ function Install-Scoop {
 
     Write-InstallInfo 'Scoop was installed successfully!' -ForegroundColor 'DarkGreen'
     Write-InstallInfo 'Type ''scoop help'' for instructions.'
+    Write-InstallInfo 'For the most optimal experience you should use PowerShell Core (7+).'
 }
 #endregion Functions
 
 #region Main
-$NoProxy, $Proxy, $ProxyCredential, $ProxyUseDefaultCredentials, $RunAsAdmin | Out-Null
+# Installer script root
+$INSTALLER_DIR = $PSScriptRoot
+$NoProxy, $Proxy, $ProxyCredential, $ProxyUseDefaultCredentials, $RunAsAdmin, $INSTALLER_DIR | Out-Null
 
 if (!$env:USERPROFILE) {
     if (!$env:HOME) { Deny-Install 'Cannot resolve user''s home directory. USERPROFILE and HOME environment variables are not set.' }
@@ -470,20 +472,20 @@ if (!$env:USERPROFILE) {
 $IS_EXECUTED_FROM_IEX = ($null -eq $MyInvocation.MyCommand.Path)
 
 # Scoop root directory
-$SCOOP_DIR = $ScoopDir, $env:SCOOP, "$env:USERPROFILE\scoop" | Where-Object { -not [String]::IsNullOrEmpty($_) } | Select-Object -First 1
+$SCOOP_DIR = $ScoopDir, $env:SCOOP, "${env:USERPROFILE}\scoop" | Where-Object { -not [String]::IsNullOrEmpty($_) } | Select-Object -First 1
 # Scoop global apps directory
-$SCOOP_GLOBAL_DIR = $ScoopGlobalDir, $env:SCOOP_GLOBAL, "$env:ProgramData\scoop" | Where-Object { -not [String]::IsNullOrEmpty($_) } | Select-Object -First 1
+$SCOOP_GLOBAL_DIR = $ScoopGlobalDir, $env:SCOOP_GLOBAL, "${env:ProgramData}\scoop" | Where-Object { -not [String]::IsNullOrEmpty($_) } | Select-Object -First 1
 # Scoop cache directory
-$SCOOP_CACHE_DIR = $ScoopCacheDir, $env:SCOOP_CACHE, "$SCOOP_DIR\cache" | Where-Object { -not [String]::IsNullOrEmpty($_) } | Select-Object -First 1
+$SCOOP_CACHE_DIR = $ScoopCacheDir, $env:SCOOP_CACHE, "${SCOOP_DIR}\cache" | Where-Object { -not [String]::IsNullOrEmpty($_) } | Select-Object -First 1
 # Scoop shims directory
-$SCOOP_SHIMS_DIR = "$SCOOP_DIR\shims"
+$SCOOP_SHIMS_DIR = "${SCOOP_DIR}\shims"
 # Scoop itself directory
-$SCOOP_APP_DIR = "$SCOOP_DIR\apps\scoop\current"
+$SCOOP_APP_DIR = "${SCOOP_DIR}\apps\scoop\current"
 # Scoop main bucket directory
-$SCOOP_MAIN_BUCKET_DIR = "$SCOOP_DIR\buckets\main"
+$SCOOP_MAIN_BUCKET_DIR = "${SCOOP_DIR}\buckets\main"
 # Scoop config file location
-$SCOOP_CONFIG_HOME = $env:XDG_CONFIG_HOME, "$env:USERPROFILE\.config" | Select-Object -First 1
-$SCOOP_CONFIG_FILE = "$SCOOP_CONFIG_HOME\scoop\config.json"
+$SCOOP_CONFIG_HOME = $env:XDG_CONFIG_HOME, "${env:USERPROFILE}\.config" | Select-Object -First 1
+$SCOOP_CONFIG_FILE = "${SCOOP_CONFIG_HOME}\scoop\config.json"
 
 # TODO: Use a specific version of Scoop and the main bucket
 $SCOOP_PACKAGE_REPO = 'https://github.com/ScoopInstaller/Scoop/archive/master.zip'
