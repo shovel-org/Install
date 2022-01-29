@@ -133,7 +133,7 @@ function Test-ValidateParameter {
     }
 
     if ($ProxyUseDefaultCredentials -and $null -ne $ProxyCredential) {
-        Deny-Install 'ProxyUseDefaultCredentials is conflict with ProxyCredential. Do not use the -ProxyCredential and -ProxyUseDefaultCredentials together.'
+        Deny-Install 'ProxyUseDefaultCredentials conflicts with ProxyCredential. Do not use the -ProxyCredential and -ProxyUseDefaultCredentials together.'
     }
 }
 
@@ -297,7 +297,7 @@ function Import-ScoopShim {
     $path = "$SCOOP_APP_DIR\bin\scoop.ps1"
 
     if (!(Test-Path -LiteralPath $SCOOP_SHIMS_DIR -PathType 'Container')) {
-        New-Item $SCOOP_SHIMS_DIR -Type 'Directory' | Out-Null
+        New-Item -Path $SCOOP_SHIMS_DIR -Type 'Directory' | Out-Null
     }
 
     # The scoop shim
@@ -571,13 +571,15 @@ function Install-Scoop {
     Add-DefaultConfig
 
     Write-InstallInfo 'Scoop was installed successfully!' -ForegroundColor 'DarkGreen'
-    Write-InstallInfo "Type 'scoop help' for instructions."
+    Write-InstallInfo 'Type ''scoop help'' for instructions.'
     Write-InstallInfo 'For the most optimal experience you should use PowerShell Core (7+).'
 }
 #endregion Functions
 
 #region Main
-$NoProxy, $Proxy, $ProxyCredential, $ProxyUseDefaultCredentials, $RunAsAdmin, $SkipRobocopy | Out-Null
+# Installer script root
+$INSTALLER_DIR = $PSScriptRoot
+$NoProxy, $Proxy, $ProxyCredential, $ProxyUseDefaultCredentials, $RunAsAdmin, $SkipRobocopy, $INSTALLER_DIR | Out-Null
 
 if (!$env:USERPROFILE) {
     if (!$env:HOME) { Deny-Install 'Cannot resolve user''s home directory. USERPROFILE and HOME environment variables are not set.' }
@@ -587,9 +589,6 @@ if (!$env:USERPROFILE) {
 
 # Prepare variables
 $IS_EXECUTED_FROM_IEX = ($null -eq $MyInvocation.MyCommand.Path)
-
-# Installer script root
-$INSTALLER_DIR = $PSScriptRoot
 
 $SCOOP_DEFAULT_DIR = "${env:USERPROFILE}\Shovel"
 $SCOOP_GLOBAL_DEFAULT_DIR = "${env:ProgramData}\Shovel"
