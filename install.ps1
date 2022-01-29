@@ -408,6 +408,40 @@ function Add-DefaultConfig {
     Add-Config -Name 'lastUpdate' -Value ([System.DateTime]::Now.ToString('o')) | Out-Null
 }
 
+function Get-AllRequiredFile {
+    # Download scoop zip from GitHub
+    Write-InstallInfo 'Downloading...'
+    $downloader = Get-Downloader
+
+    # 1. download scoop
+    $scoopZipfile = "${SCOOP_APP_DIR}\scoop.zip"
+    if (!(Test-Path -LiteralPath $SCOOP_APP_DIR -PathType 'Container')) {
+        New-Item -Path $SCOOP_APP_DIR -Type 'Directory' | Out-Null
+    }
+    $downloader.DownloadFile($SCOOP_PACKAGE_REPO, $scoopZipfile)
+    # 2. download scoop main bucket
+    $scoopMainZipfile = "${SCOOP_MAIN_BUCKET_DIR}\scoop-main.zip"
+    if (!(Test-Path -LiteralPath $SCOOP_MAIN_BUCKET_DIR -PathType 'Container')) {
+        New-Item -Path $SCOOP_MAIN_BUCKET_DIR -Type 'Directory' | Out-Null
+    }
+    $downloader.DownloadFile($SCOOP_MAIN_BUCKET_REPO, $scoopMainZipfile)
+
+    # Extract files from downloaded zip
+    Write-InstallInfo 'Extracting...'
+    # 1. extract scoop
+    $scoopUnzipTempDir = "${SCOOP_APP_DIR}\_tmp"
+    Expand-ZipArchive $scoopZipfile $scoopUnzipTempDir
+    Copy-Item "${scoopUnzipTempDir}\scoop-*\*" $SCOOP_APP_DIR -Recurse -Force
+    # 2. extract scoop main bucket
+    $scoopMainUnzipTempDir = "${SCOOP_MAIN_BUCKET_DIR}\_tmp"
+    Expand-ZipArchive $scoopMainZipfile $scoopMainUnzipTempDir
+    Copy-Item "${scoopMainUnzipTempDir}\Main-*\*" $SCOOP_MAIN_BUCKET_DIR -Recurse -Force
+
+    # Cleanup
+    Remove-Item $scoopUnzipTempDir, $scoopMainUnzipTempDir -Recurse -Force
+    Remove-Item $scoopZipfile, $scoopMainZipfile
+}
+
 function Install-Scoop {
     Write-InstallInfo 'Initializing...'
     # Validate install parameters
@@ -417,36 +451,8 @@ function Install-Scoop {
     # Enable TLS 1.2
     Optimize-SecurityProtocol
 
-    # Download scoop zip from GitHub
-    Write-InstallInfo 'Downloading...'
-    $downloader = Get-Downloader
-    # 1. download scoop
-    $scoopZipfile = "$SCOOP_APP_DIR\scoop.zip"
-    if (!(Test-Path $SCOOP_APP_DIR)) {
-        New-Item -Type 'Directory' $SCOOP_APP_DIR | Out-Null
-    }
-    $downloader.downloadFile($SCOOP_PACKAGE_REPO, $scoopZipfile)
-    # 2. download scoop main bucket
-    $scoopMainZipfile = "$SCOOP_MAIN_BUCKET_DIR\scoop-main.zip"
-    if (!(Test-Path $SCOOP_MAIN_BUCKET_DIR)) {
-        New-Item -Type 'Directory' $SCOOP_MAIN_BUCKET_DIR | Out-Null
-    }
-    $downloader.downloadFile($SCOOP_MAIN_BUCKET_REPO, $scoopMainZipfile)
-
-    # Extract files from downloaded zip
-    Write-InstallInfo 'Extracting...'
-    # 1. extract scoop
-    $scoopUnzipTempDir = "$SCOOP_APP_DIR\_tmp"
-    Expand-ZipArchive $scoopZipfile $scoopUnzipTempDir
-    Copy-Item "$scoopUnzipTempDir\scoop-*\*" $SCOOP_APP_DIR -Recurse -Force
-    # 2. extract scoop main bucket
-    $scoopMainUnzipTempDir = "$SCOOP_MAIN_BUCKET_DIR\_tmp"
-    Expand-ZipArchive $scoopMainZipfile $scoopMainUnzipTempDir
-    Copy-Item "$scoopMainUnzipTempDir\Main-*\*" $SCOOP_MAIN_BUCKET_DIR -Recurse -Force
-
-    # Cleanup
-    Remove-Item $scoopUnzipTempDir, $scoopMainUnzipTempDir -Recurse -Force
-    Remove-Item $scoopZipfile, $scoopMainZipfile
+    # Prepare all the needed files. Download and extract/pull
+    Get-AllRequiredFile
 
     # Create the scoop shim
     Import-ScoopShim
