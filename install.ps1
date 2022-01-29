@@ -50,7 +50,7 @@
 .LINK
     https://scoop.sh
 .LINK
-    https://github.com/lukesampson/scoop/wiki
+    https://github.com/ScoopInstaller/Scoop/wiki
 #>
 param(
     [String] $ScoopDir,
