@@ -230,7 +230,7 @@ function Expand-ZipArchive {
     $retries = 0
     while ($retries -le 10) {
         if ($retries -eq 10) {
-            Deny-Install "Unzip failed: cannot unzip because a process is locking the file."
+            Deny-Install 'Unzip failed: cannot unzip because a process is locking the file.'
         }
         if (Test-isFileLocked $path) {
             Write-InstallInfo "Waiting for $path to be unlocked by another process... ($retries/10)"
@@ -275,9 +275,8 @@ function Import-ScoopShim {
         New-Item -Path $SCOOP_SHIMS_DIR -Type 'Directory' | Out-Null
     }
 
-    # The scoop shim
-    # TODO: Switch
-    $shim = "$SCOOP_SHIMS_DIR\scoop"
+    # The shim
+    $shim = "$SCOOP_SHIMS_DIR\shovel"
 
     # Convert to relative path
     Push-Location $SCOOP_SHIMS_DIR
@@ -299,7 +298,6 @@ set args=%*
 :: replace problem characters in arguments
 set args=%args:"='%
 set args=%args:(=``(%
-set args=%args:(=`(%
 set args=%args:)=``)%
 set invalid="='
 if !args! == !invalid! ( set args= )
@@ -307,11 +305,15 @@ powershell -NoProfile -ExecutionPolicy Unrestricted "& '$path' %args%; exit `$LA
 "@
 
     # Make scoop accessible from bash or other posix shell
-    Out-UTF8File -LiteralPath $shim -Content "#!/bin/sh`npowershell.exe -ExecutionPolicy Unrestricted `"$path`" `"$@`"" -LineEnd "`n"
+    Out-UTF8File -LiteralPath $shim -LineEnd "`n" -Content @(
+        '#!/bin/sh',
+        "powershell.exe -NoProfile -NoLogo -ExecutionPolicy Unrestricted `"$path`" `"$@`"",
+        ''
+    )
 
     # Adopt shovel commands
-    Get-ChildItem $SCOOP_SHIMS_DIR -Filter 'scoop.*' |
-        Copy-Item -Destination { Join-Path $_.Directory.FullName (($_.BaseName -replace 'scoop', 'shovel') + $_.Extension) }
+    Get-ChildItem $SCOOP_SHIMS_DIR -Filter 'shovel.*' |
+        Copy-Item -Destination { Join-Path $_.Directory.FullName (($_.BaseName -replace 'shovel', 'scoop') + $_.Extension) }
 }
 
 function Get-Env {
