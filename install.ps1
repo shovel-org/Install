@@ -138,9 +138,7 @@ function Test-ValidateParameter {
 }
 
 function Test-IsAdministrator {
-    return ([Security.Principal.WindowsPrincipal]`
-            [Security.Principal.WindowsIdentity]::GetCurrent()`
-    ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    return ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
 function Test-Prerequisite {
@@ -251,14 +249,14 @@ function Expand-ZipArchive {
     )
 
     if (!(Test-Path -LiteralPath $path -PathType 'Leaf')) {
-        Deny-Install "Unzip failed: can't find $path to unzip."
+        Deny-Install "Unzip failed: cannot find $path to unzip."
     }
 
     # Check if the zip file is locked, by antivirus software for example
     $retries = 0
     while ($retries -le 10) {
         if ($retries -eq 10) {
-            Deny-Install "Unzip failed: can't unzip because a process is locking the file."
+            Deny-Install "Unzip failed: cannot unzip because a process is locking the file."
         }
         if (Test-isFileLocked $path) {
             Write-InstallInfo "Waiting for $path to be unlocked by another process... ($retries/10)"
