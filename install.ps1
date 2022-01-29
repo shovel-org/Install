@@ -398,7 +398,7 @@ function Add-DefaultConfig {
         if ((Test-IsAdministrator) -and $env:SCOOP_CACHE) {
             [Environment]::SetEnvironmentVariable('SCOOP_CACHE', $env:SCOOP_CACHE, 'Machine')
         } else {
-            if ($SCOOP_CACHE_DIR -ne $SCOOP_CACHE_DEFAULT_DIR) {
+            if ($SCOOP_CACHE_DIR -ne "${SCOOP_DIR}\cache") {
                 Add-Config -Name 'cachePath' -Value $SCOOP_CACHE_DIR | Out-Null
             }
         }
