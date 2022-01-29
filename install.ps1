@@ -247,6 +247,24 @@ function Expand-ZipArchive {
     Microsoft.PowerShell.Archive\Expand-Archive -Path $path -DestinationPath $to -Force
 }
 
+function Out-UTF8File {
+    param(
+        [Alias('Path', 'LiteralPath')]
+        [System.IO.FileInfo] $File,
+        $Content,
+        $LineEnd = "`r`n"
+    )
+
+    if ($null -eq $Content) { return }
+
+    $c = $Content -join $LineEnd
+    if ($PSVersionTable.PSVersion.Major -ge 6) {
+        Set-Content -LiteralPath $File -Value $c -Encoding 'utf8NoBOM'
+    } else {
+        [System.IO.File]::WriteAllText($File, $c)
+    }
+}
+
 function Import-ScoopShim {
     Write-InstallInfo 'Creating shim...'
 
@@ -267,24 +285,29 @@ function Import-ScoopShim {
     Pop-Location
 
     # Setting PSScriptRoot in Shim if it is not defined, so the shim doesn't break in PowerShell 2.0
-    Write-Output "if (!(Test-Path Variable:PSScriptRoot)) { `$PSScriptRoot = Split-Path `$MyInvocation.MyCommand.Path -Parent }" | Out-File "$shim.ps1" -Encoding utf8
-    Write-Output "`$path = Join-Path `"`$PSScriptRoot`" `"$relativePath`"" | Out-File "$shim.ps1" -Encoding 'utf8' -Append
-    Write-Output "if (`$MyInvocation.ExpectingInput) { `$input | & `$path @args } else { & `$path @args }" | Out-File "$shim.ps1" -Encoding 'utf8' -Append
+    Out-UTF8File -LiteralPath "$shim.ps1" -Content @"
+if (!(Test-Path Variable:PSScriptRoot)) { `$PSScriptRoot = Split-Path `$MyInvocation.MyCommand.Path -Parent }
+`$path = Join-Path "`$PSScriptRoot" "$relativePath"
+if (`$MyInvocation.ExpectingInput) { `$input | & `$path @args } else { & `$path @args }
+"@
 
     # Make scoop accessible from cmd.exe
-    Write-Output "@echo off
+    Out-UTF8File -LiteralPath "$shim.cmd" -Content @"
+@echo off
 setlocal enabledelayedexpansion
 set args=%*
 :: replace problem characters in arguments
-set args=%args:`"='%
+set args=%args:"='%
 set args=%args:(=``(%
+set args=%args:(=`(%
 set args=%args:)=``)%
-set invalid=`"='
+set invalid="='
 if !args! == !invalid! ( set args= )
-powershell -noprofile -ex unrestricted `"& '$path' %args%;exit `$lastexitcode`"" | Out-File "$shim.cmd" -Encoding 'ascii'
+powershell -NoProfile -ExecutionPolicy Unrestricted "& '$path' %args%; exit `$LASTEXITCODE"
+"@
 
     # Make scoop accessible from bash or other posix shell
-    Write-Output "#!/bin/sh`npowershell.exe -ex unrestricted `"$path`" `"$@`"" | Out-File $shim -Encoding 'ascii'
+    Out-UTF8File -LiteralPath $shim -Content "#!/bin/sh`npowershell.exe -ExecutionPolicy Unrestricted `"$path`" `"$@`"" -LineEnd "`n"
 
     # Adopt shovel commands
     Get-ChildItem $SCOOP_SHIMS_DIR -Filter 'scoop.*' |
@@ -368,7 +391,8 @@ function Add-Config {
         $scoopConfig.PSObject.Properties.Remove($Name)
     }
 
-    ConvertTo-Json $scoopConfig | Set-Content $SCOOP_CONFIG_FILE -Encoding 'ASCII'
+    Out-UTF8File -LiteralPath $SCOOP_CONFIG_FILE -Content (ConvertTo-Json $scoopConfig)
+
     return $scoopConfig
 }
 
