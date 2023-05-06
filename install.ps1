@@ -424,14 +424,17 @@ function Add-Config {
         $baseDir = Split-Path -Path $SCOOP_CONFIG_FILE
         if (!(Test-Path -LiteralPath $baseDir -PathType 'Container')) {
             New-Item -Path $baseDir -Type 'Directory' | Out-Null
+            Write-Verbose "Created config directory - $baseDir"
         }
 
         $scoopConfig = New-Object PSObject
         $scoopConfig | Add-Member -MemberType 'NoteProperty' -Name $Name -Value $Value
+        Write-Verbose "Added config option - $Name with value $Value"
     }
 
     if ($null -eq $Value) {
         $scoopConfig.PSObject.Properties.Remove($Name)
+        Write-Verbose "Removed config option - $Name"
     }
 
     Out-UTF8File -LiteralPath $SCOOP_CONFIG_FILE -Content (ConvertTo-Json $scoopConfig)
@@ -490,29 +493,50 @@ function Get-AllRequiredFile {
     $scoopZipfile = "${SCOOP_APP_DIR}\scoop.zip"
     if (!(Test-Path -LiteralPath $SCOOP_APP_DIR -PathType 'Container')) {
         New-Item -Path $SCOOP_APP_DIR -Type 'Directory' | Out-Null
+        Write-Verbose "Created scoop directory - $SCOOP_APP_DIR"
     }
     $downloader.DownloadFile($SCOOP_PACKAGE_REPO, $scoopZipfile)
+    Write-Verbose "Downloaded $SCOOP_PACKAGE_REPO"
     # 2. download scoop main bucket
     $scoopMainZipfile = "${SCOOP_MAIN_BUCKET_DIR}\scoop-main.zip"
     if (!(Test-Path -LiteralPath $SCOOP_MAIN_BUCKET_DIR -PathType 'Container')) {
         New-Item -Path $SCOOP_MAIN_BUCKET_DIR -Type 'Directory' | Out-Null
+        Write-Verbose "Created bucket directory - main - $SCOOP_MAIN_BUCKET_DIR"
     }
     $downloader.DownloadFile($SCOOP_MAIN_BUCKET_REPO, $scoopMainZipfile)
+    Write-Verbose "Downloaded $SCOOP_MAIN_BUCKET_REPO"
+    # 3. download scoop Base bucket
+    $scoopBaseZipfile = "${SCOOP_BASE_BUCKET_DIR}\scoop-Base.zip"
+    if (!(Test-Path -LiteralPath $SCOOP_BASE_BUCKET_DIR -PathType 'Container')) {
+        New-Item -Path $SCOOP_BASE_BUCKET_DIR -Type 'Directory' | Out-Null
+        Write-Verbose "Created bucket directory - Base - $SCOOP_BASE_BUCKET_DIR"
+    }
+    $downloader.DownloadFile($SCOOP_BASE_BUCKET_REPO, $scoopBaseZipfile)
+    Write-Verbose "Downloaded $SCOOP_BASE_BUCKET_REPO"
 
     # Extract files from downloaded zip
+    # TODO: Move instead of Copy
     Write-InstallInfo 'Extracting...'
     # 1. extract scoop
     $scoopUnzipTempDir = "${SCOOP_APP_DIR}\_tmp"
     Expand-ZipArchive $scoopZipfile $scoopUnzipTempDir
     Copy-Item "${scoopUnzipTempDir}\scoop-*\*" $SCOOP_APP_DIR -Recurse -Force
+    Write-Verbose "Extracted scoop installation"
     # 2. extract scoop main bucket
     $scoopMainUnzipTempDir = "${SCOOP_MAIN_BUCKET_DIR}\_tmp"
     Expand-ZipArchive $scoopMainZipfile $scoopMainUnzipTempDir
     Copy-Item "${scoopMainUnzipTempDir}\Main-*\*" $SCOOP_MAIN_BUCKET_DIR -Recurse -Force
+    Write-Verbose 'Extracted main bucket'
+    # 3. extract scoop Base bucket
+    $scoopBaseUnzipTempDir = "${SCOOP_BASE_BUCKET_DIR}\_tmp"
+    Expand-ZipArchive $scoopBaseZipfile $scoopBaseUnzipTempDir
+    Copy-Item "${scoopBaseUnzipTempDir}\Base-*\*" $SCOOP_BASE_BUCKET_DIR -Recurse -Force
+    Write-Verbose 'Extracted Base bucket'
 
     # Cleanup
-    Remove-Item $scoopUnzipTempDir, $scoopMainUnzipTempDir -Recurse -Force
-    Remove-Item $scoopZipfile, $scoopMainZipfile
+    Remove-Item $scoopUnzipTempDir, $scoopMainUnzipTempDir, $scoopBaseUnzipTempDir -Recurse -Force
+    Remove-Item $scoopZipfile, $scoopMainZipfile, $scoopBaseZipfile
+    Write-Verbose 'Removed temporary/downloaded files'
 }
 
 function Install-Scoop {
@@ -537,7 +561,9 @@ function Install-Scoop {
 
     Write-InstallInfo 'Scoop was installed successfully!' -ForegroundColor 'DarkGreen'
     Write-InstallInfo 'Type ''scoop help'' for instructions.'
-    Write-InstallInfo 'For the most optimal experience you should use PowerShell Core (7+).'
+    if ($PSVersionTable.PSVersion.Major -lt 7) {
+        Write-InstallInfo 'For the most optimal experience you should use PowerShell Core (7+).'
+    }
 }
 #endregion Functions
 
@@ -550,6 +576,7 @@ if (!$env:USERPROFILE) {
     if (!$env:HOME) { Deny-Install 'Cannot resolve user''s home directory. USERPROFILE and HOME environment variables are not set.' }
 
     $env:USERPROFILE = $env:HOME
+    Write-Verbose "Using `$env:HOME instead of `$env:USERPROFILE"
 }
 
 # Prepare variables
@@ -558,7 +585,8 @@ $IS_EXECUTED_FROM_IEX = ($null -eq $MyInvocation.MyCommand.Path)
 $SCOOP_DEFAULT_DIR = "${env:USERPROFILE}\scoop"
 $SCOOP_GLOBAL_DEFAULT_DIR = "${env:ProgramData}\scoop"
 
-# TODO: Change and rebrand# Scoop repository
+# TODO: Change and rebrand
+# Scoop repository
 $SCOOP_REPO = _firstNonNullOrEmpty $ScoopRepo, $env:SCOOP_REPO, 'https://github.com/ScoopInstaller/Scoop'
 $SCOOP_REPO = $SCOOP_REPO -replace '\.git$'
 # Scoop branch
@@ -578,7 +606,9 @@ $SCOOP_APP_DIR = "${SCOOP_DIR}\apps\scoop\current"
 # Scoop buckets directory
 $SCOOP_BUCKETS_DIR = "${SCOOP_DIR}\buckets"
 # Scoop main bucket directory
-$SCOOP_MAIN_BUCKET_DIR = "${SCOOP_DIR}\buckets\main"
+$SCOOP_MAIN_BUCKET_DIR = "${SCOOP_BUCKETS_DIR}\main"
+# Scoop Base bucket directory
+$SCOOP_BASE_BUCKET_DIR = "${SCOOP_BUCKETS_DIR}\Base"
 # Scoop config file location
 $SCOOP_CONFIG_HOME = _firstNonNullOrEmpty $env:XDG_CONFIG_HOME, "${env:USERPROFILE}\.config"
 $SCOOP_CONFIG_FILE = "${SCOOP_CONFIG_HOME}\scoop\config.json"
@@ -586,6 +616,7 @@ $SCOOP_CONFIG_FILE = "${SCOOP_CONFIG_HOME}\scoop\config.json"
 # TODO: Use a specific version of Scoop and the main bucket
 $SCOOP_PACKAGE_REPO = "${SCOOP_REPO}/archive/${SCOOP_BRANCH}.zip"
 $SCOOP_MAIN_BUCKET_REPO = 'https://github.com/ScoopInstaller/Main/archive/master.zip'
+$SCOOP_BASE_BUCKET_REPO = 'https://github.com/shovel-org/Base/archive/main.zip'
 
 # Bootstrap function
 & {
