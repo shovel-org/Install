@@ -392,9 +392,9 @@ function Add-ShimsDirToPath {
         }
 
         # For future sessions
-        [System.Environment]::SetEnvironmentVariable('PATH', $userEnvPath, 'User')
+        [System.Environment]::SetEnvironmentVariable('PATH', $newUserEnvPath,'User')
         # For current session
-        $env:PATH = $userEnvPath
+        $env:PATH = $newUserEnvPath
     }
 
     # Get $env:PATH of machine
