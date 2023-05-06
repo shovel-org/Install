@@ -230,7 +230,7 @@ function Expand-ZipArchive {
     $retries = 0
     while ($retries -le 10) {
         if ($retries -eq 10) {
-            Deny-Install "Unzip failed: cannot unzip because a process is locking the file."
+            Deny-Install 'Unzip failed: cannot unzip because a process is locking the file.'
         }
         if (Test-isFileLocked $path) {
             Write-InstallInfo "Waiting for $path to be unlocked by another process... ($retries/10)"
@@ -247,6 +247,31 @@ function Expand-ZipArchive {
     Microsoft.PowerShell.Archive\Expand-Archive -Path $path -DestinationPath $to -Force
 }
 
+function Out-UTF8File {
+    param(
+        [Parameter(Mandatory, Position = 0)]
+        [Alias('Path', 'LiteralPath', 'FilePath')]
+        [System.IO.FileInfo] $File,
+        $Content,
+        $LineEnd = "`r`n",
+        [Parameter(ValueFromPipeline = $True)]
+        [PSObject] $InputObject
+    )
+
+    begin {
+        if ($null -eq $Content) { return }
+    }
+
+    process {
+        $c = $Content -join $LineEnd
+        if ($PSVersionTable.PSVersion.Major -ge 6) {
+            Set-Content -LiteralPath $File -Value $c -Encoding 'utf8NoBOM'
+        } else {
+            [System.IO.File]::WriteAllText($File, $c)
+        }
+    }
+}
+
 function Import-ScoopShim {
     Write-InstallInfo 'Creating shim...'
 
@@ -257,9 +282,8 @@ function Import-ScoopShim {
         New-Item -Path $SCOOP_SHIMS_DIR -Type 'Directory' | Out-Null
     }
 
-    # The scoop shim
-    # TODO: Switch
-    $shim = "$SCOOP_SHIMS_DIR\scoop"
+    # The shim
+    $shim = "$SCOOP_SHIMS_DIR\shovel"
 
     # Convert to relative path
     Push-Location $SCOOP_SHIMS_DIR
@@ -267,28 +291,36 @@ function Import-ScoopShim {
     Pop-Location
 
     # Setting PSScriptRoot in Shim if it is not defined, so the shim doesn't break in PowerShell 2.0
-    Write-Output "if (!(Test-Path Variable:PSScriptRoot)) { `$PSScriptRoot = Split-Path `$MyInvocation.MyCommand.Path -Parent }" | Out-File "$shim.ps1" -Encoding utf8
-    Write-Output "`$path = Join-Path `"`$PSScriptRoot`" `"$relativePath`"" | Out-File "$shim.ps1" -Encoding 'utf8' -Append
-    Write-Output "if (`$MyInvocation.ExpectingInput) { `$input | & `$path @args } else { & `$path @args }" | Out-File "$shim.ps1" -Encoding 'utf8' -Append
+    Out-UTF8File -LiteralPath "$shim.ps1" -Content @"
+if (!(Test-Path Variable:PSScriptRoot)) { `$PSScriptRoot = Split-Path `$MyInvocation.MyCommand.Path -Parent }
+`$path = Join-Path "`$PSScriptRoot" "$relativePath"
+if (`$MyInvocation.ExpectingInput) { `$input | & `$path @args } else { & `$path @args }
+"@
 
     # Make scoop accessible from cmd.exe
-    Write-Output "@echo off
+    Out-UTF8File -LiteralPath "$shim.cmd" -Content @"
+@echo off
 setlocal enabledelayedexpansion
 set args=%*
 :: replace problem characters in arguments
-set args=%args:`"='%
+set args=%args:"='%
 set args=%args:(=``(%
 set args=%args:)=``)%
-set invalid=`"='
+set invalid="='
 if !args! == !invalid! ( set args= )
-powershell -noprofile -ex unrestricted `"& '$path' %args%;exit `$lastexitcode`"" | Out-File "$shim.cmd" -Encoding 'ascii'
+powershell -NoProfile -ExecutionPolicy Unrestricted "& '$path' %args%; exit `$LASTEXITCODE"
+"@
 
     # Make scoop accessible from bash or other posix shell
-    Write-Output "#!/bin/sh`npowershell.exe -ex unrestricted `"$path`" `"$@`"" | Out-File $shim -Encoding 'ascii'
+    Out-UTF8File -LiteralPath $shim -LineEnd "`n" -Content @(
+        '#!/bin/sh',
+        "powershell.exe -NoProfile -NoLogo -ExecutionPolicy Unrestricted `"$path`" `"$@`"",
+        ''
+    )
 
-    # Adopt shovel commands
-    Get-ChildItem $SCOOP_SHIMS_DIR -Filter 'scoop.*' |
-        Copy-Item -Destination { Join-Path $_.Directory.FullName (($_.BaseName -replace 'scoop', 'shovel') + $_.Extension) }
+    # Backwards compatible with scoop
+    Get-ChildItem $SCOOP_SHIMS_DIR -Filter 'shovel.*' |
+        Copy-Item -Destination { Join-Path $_.Directory.FullName (($_.BaseName -replace 'shovel', 'scoop') + $_.Extension) }
 }
 
 function Get-Env {
@@ -368,7 +400,8 @@ function Add-Config {
         $scoopConfig.PSObject.Properties.Remove($Name)
     }
 
-    ConvertTo-Json $scoopConfig | Set-Content $SCOOP_CONFIG_FILE -Encoding 'ASCII'
+    Out-UTF8File -LiteralPath $SCOOP_CONFIG_FILE -Content (ConvertTo-Json $scoopConfig)
+
     return $scoopConfig
 }
 
@@ -510,13 +543,9 @@ $SCOOP_CONFIG_FILE = "${SCOOP_CONFIG_HOME}\scoop\config.json"
 $SCOOP_PACKAGE_REPO = 'https://github.com/ScoopInstaller/Scoop/archive/master.zip'
 $SCOOP_MAIN_BUCKET_REPO = 'https://github.com/ScoopInstaller/Main/archive/master.zip'
 
-# Quit if anything goes wrong
-$oldErrorActionPreference = $ErrorActionPreference
-$ErrorActionPreference = 'Stop'
-
 # Bootstrap function
-Install-Scoop
-
-# Reset $ErrorActionPreference to original value
-$ErrorActionPreference = $oldErrorActionPreference
+& {
+    $ErrorActionPreference = 'Stop'
+    Install-Scoop
+}
 #endregion Main
