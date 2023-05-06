@@ -61,7 +61,7 @@
 .PARAMETER RunAsAdmin
     Force to run the installer as administrator.
 .PARAMETER SkipRobocopy
-    Specifies to not check the existence of robocopy.exe.
+    Do not check existence of robocopy.exe in windows PATH.
     Useful for nanocore installations.
 .PARAMETER SkipGit
     Use this option if git is installed, but should not be used.
@@ -71,12 +71,13 @@
 .LINK
     https://github.com/ScoopInstaller/Scoop/wiki
 #>
+[CmdletBinding()]
 param(
     [String] $ScoopDir,
     [String] $ScoopGlobalDir,
     [String] $ScoopCacheDir,
     [String] $ScoopRepo,
-    [String] $ScoopBranch = 'main',
+    [String] $ScoopBranch,
     [String] $InstallerCacheDir,
     [Switch] $NoProxy,
     [Uri] $Proxy,
@@ -91,6 +92,10 @@ param(
 Set-StrictMode -Off
 
 #region Functions
+function _firstNonNullOrEmpty([Array] $Arguments) {
+    return $Arguments | Where-Object { -not [String]::IsNullOrEmpty($_) } | Select-Object -First 1
+}
+
 function Write-InstallInfo {
     param(
         [Parameter(Mandatory, Position = 0)]
@@ -153,9 +158,9 @@ function Test-Prerequisite {
     }
 
     # Ensure Robocopy.exe is accessible
-    if (!([bool](Get-Command -Name 'robocopy' -ErrorAction 'SilentlyContinue'))) {
-        if (!$SkipRobocopy) {
-            Deny-Install "Scoop requires 'C:\Windows\System32\Robocopy.exe' to work. Please make sure 'C:\Windows\System32' is in your PATH."
+    if (!$SkipRobocopy) {
+        if (!([bool](Get-Command -Name 'robocopy' -ErrorAction 'SilentlyContinue'))) {
+            Deny-Install 'Scoop requires ''C:\Windows\System32\Robocopy.exe'' to work. Please make sure ''C:\Windows\System32'' is in your PATH.'
         }
     }
 
@@ -256,7 +261,7 @@ function Expand-ZipArchive {
     $retries = 0
     while ($retries -le 10) {
         if ($retries -eq 10) {
-            Deny-Install "Unzip failed: cannot unzip because a process is locking the file."
+            Deny-Install 'Unzip failed: cannot unzip because a process is locking the file.'
         }
         if (Test-isFileLocked $path) {
             Write-InstallInfo "Waiting for $path to be unlocked by another process... ($retries/10)"
@@ -275,18 +280,26 @@ function Expand-ZipArchive {
 
 function Out-UTF8File {
     param(
-        [Alias('Path', 'LiteralPath')]
+        [Parameter(Mandatory, Position = 0)]
+        [Alias('Path', 'LiteralPath', 'FilePath')]
         [System.IO.FileInfo] $File,
         $Content,
-        $LineEnd = "`r`n"
+        $LineEnd = "`r`n",
+        [Parameter(ValueFromPipeline)]
+        [PSObject] $InputObject
     )
 
-    if ($null -eq $Content) { return }
-    $c = $Content -join $LineEnd
-    if ($PSVersionTable.PSVersion.Major -ge 6) {
-        Set-Content -LiteralPath $File -Value $c -Encoding 'utf8'
-    } else {
-        [System.IO.File]::WriteAllText($File, $c)
+    begin {
+        if ($null -eq $Content) { return }
+    }
+
+    process {
+        $c = $Content -join $LineEnd
+        if ($PSVersionTable.PSVersion.Major -ge 6) {
+            Set-Content -LiteralPath $File -Value $c -Encoding 'utf8NoBOM'
+        } else {
+            [System.IO.File]::WriteAllText($File, $c)
+        }
     }
 }
 
@@ -298,11 +311,17 @@ function Import-ScoopShim {
 
     if (!(Test-Path -LiteralPath $SCOOP_SHIMS_DIR -PathType 'Container')) {
         New-Item -Path $SCOOP_SHIMS_DIR -Type 'Directory' | Out-Null
+        Write-Verbose "Created shim directory: $SCOOP_SHIMS_DIR"
+    }
+    if ($RunAsAdmin) {
+        if (!(Test-Path -LiteralPath $SCOOP_GLOBAL_SHIMS_DIR -PathType 'Container')) {
+            New-Item -Path $SCOOP_GLOBAL_SHIMS_DIR -Type 'Directory' -Force | Out-Null
+            Write-Verbose "Created global shim directory: $SCOOP_GLOBAL_SHIMS_DIR"
+        }
     }
 
-    # The scoop shim
-    # TODO: Switch
-    $shim = "$SCOOP_SHIMS_DIR\scoop"
+    # The shim
+    $shim = "$SCOOP_SHIMS_DIR\shovel"
 
     # Convert to relative path
     Push-Location $SCOOP_SHIMS_DIR
@@ -310,11 +329,12 @@ function Import-ScoopShim {
     Pop-Location
 
     # Setting PSScriptRoot in Shim if it is not defined, so the shim doesn't break in PowerShell 2.0
-    Out-UTF8File -LiteralPath "$shim.ps1" @"
+    Out-UTF8File -LiteralPath "$shim.ps1" -Content @"
 if (!(Test-Path Variable:PSScriptRoot)) { `$PSScriptRoot = Split-Path `$MyInvocation.MyCommand.Path -Parent }
-`$path = Join-Path `"`$PSScriptRoot`" `"$relativePath`"
+`$path = Join-Path "`$PSScriptRoot" "$relativePath"
 if (`$MyInvocation.ExpectingInput) { `$input | & `$path @args } else { & `$path @args }
 "@
+    Write-Verbose 'Created shim - ps1'
 
     # Make scoop accessible from cmd.exe
     Out-UTF8File -LiteralPath "$shim.cmd" -Content @"
@@ -322,20 +342,27 @@ if (`$MyInvocation.ExpectingInput) { `$input | & `$path @args } else { & `$path 
 setlocal enabledelayedexpansion
 set args=%*
 :: replace problem characters in arguments
-set args=%args:`"='%
+set args=%args:"='%
 set args=%args:(=``(%
 set args=%args:)=``)%
-set invalid=`"='
+set invalid="='
 if !args! == !invalid! ( set args= )
-powershell -noprofile -ex unrestricted `"& '$path' %args%;exit `$lastexitcode`"
+powershell -NoProfile -ExecutionPolicy Unrestricted "& '$path' %args%; exit `$LASTEXITCODE"
 "@
+    Write-Verbose 'Created shim - cmd'
 
     # Make scoop accessible from bash or other posix shell
-    Out-UTF8File -LiteralPath $shim -Content "#!/bin/sh`npowershell.exe -ex unrestricted `"$path`" `"$@`"" -LineEnd "`n"
+    Out-UTF8File -LiteralPath $shim -LineEnd "`n" -Content @(
+        '#!/bin/sh',
+        "powershell.exe -NoProfile -NoLogo -ExecutionPolicy Unrestricted `"$path`" `"$@`"",
+        ''
+    )
+    Write-Verbose 'Created shim - bash'
 
-    # Adopt shovel commands
-    Get-ChildItem $SCOOP_SHIMS_DIR -Filter 'scoop.*' |
-        Copy-Item -Destination { Join-Path $_.Directory.FullName (($_.BaseName -replace 'scoop', 'shovel') + $_.Extension) }
+    # Backwards compatible with scoop
+    Get-ChildItem $SCOOP_SHIMS_DIR -Filter 'shovel.*' |
+        Copy-Item -Destination { Join-Path $_.Directory.FullName (($_.BaseName -replace 'shovel', 'scoop') + $_.Extension) }
+    Write-Verbose 'Created scoop commands'
 }
 
 function Get-Env {
@@ -596,16 +623,16 @@ $SCOOP_GLOBAL_DEFAULT_DIR = "${env:ProgramData}\Shovel"
 
 # TODO: Change and rebrand
 # Scoop repository
-$SCOOP_REPO = $ScoopRepo, $env:SCOOP_REPO, 'https://github.com/Ash258/Scoop-Core' | Where-Object { -not [String]::IsNullOrEmpty($_) } | Select-Object -First 1
+$SCOOP_REPO = _firstNonNullOrEmpty $ScoopRepo, $env:SCOOP_REPO, 'https://github.com/Ash258/Scoop-Core'
 $SCOOP_REPO = $SCOOP_REPO -replace '\.git$'
 # Scoop branch
-$SCOOP_BRANCH = $ScoopBranch, $env:SCOOP_BRANCH, 'main' | Where-Object { -not [String]::IsNullOrEmpty($_) } | Select-Object -First 1
+$SCOOP_BRANCH = _firstNonNullOrEmpty $ScoopBranch, $env:SCOOP_BRANCH, 'main'
 # Scoop root directory
-$SCOOP_DIR = $ScoopDir, $env:SCOOP, $SCOOP_DEFAULT_DIR | Where-Object { -not [String]::IsNullOrEmpty($_) } | Select-Object -First 1
+$SCOOP_DIR = _firstNonNullOrEmpty $ScoopDir, $env:SCOOP, $SCOOP_DEFAULT_DIR
 # Scoop global apps directory
-$SCOOP_GLOBAL_DIR = $ScoopGlobalDir, $env:SCOOP_GLOBAL, $SCOOP_GLOBAL_DEFAULT_DIR | Where-Object { -not [String]::IsNullOrEmpty($_) } | Select-Object -First 1
+$SCOOP_GLOBAL_DIR = _firstNonNullOrEmpty $ScoopGlobalDir, $env:SCOOP_GLOBAL, $SCOOP_GLOBAL_DEFAULT_DIR
 # Scoop cache directory
-$SCOOP_CACHE_DIR = $ScoopCacheDir, $env:SCOOP_CACHE, "${SCOOP_DIR}\cache" | Where-Object { -not [String]::IsNullOrEmpty($_) } | Select-Object -First 1
+$SCOOP_CACHE_DIR = _firstNonNullOrEmpty $ScoopCacheDir, $env:SCOOP_CACHE, "${SCOOP_DIR}\cache"
 # Scoop shims directory
 $SCOOP_SHIMS_DIR = "${SCOOP_DIR}\shims"
 # Scoop global shims directory
@@ -615,11 +642,11 @@ $SCOOP_APP_DIR = "${SCOOP_DIR}\apps\scoop\current"
 # Scoop buckets directory
 $SCOOP_BUCKETS_DIR = "${SCOOP_DIR}\buckets"
 # Scoop config file location
-$SCOOP_CONFIG_HOME = $env:XDG_CONFIG_HOME, "${env:USERPROFILE}\.config" | Where-Object { -not [String]::IsNullOrEmpty($_) } | Select-Object -First 1
+$SCOOP_CONFIG_HOME = _firstNonNullOrEmpty $env:XDG_CONFIG_HOME, "${env:USERPROFILE}\.config"
 $SCOOP_CONFIG_FILE = "${SCOOP_CONFIG_HOME}\scoop\config.json"
 
 # Cache used for loading the repository zips instead of downloading them.
-$INSTALL_CACHE = $InstallerCacheDir, $ScoopCacheDir | Where-Object { -not [String]::IsNullOrEmpty($_) } | Select-Object -First 1
+$INSTALL_CACHE = _firstNonNullOrEmpty $InstallerCacheDir, $ScoopCacheDir
 
 $SCOOP_PACKAGE_REPO_GIT = $SCOOP_REPO
 $SCOOP_PACKAGE_REPO = "${SCOOP_PACKAGE_REPO_GIT}/archive/${SCOOP_BRANCH}.zip"
@@ -633,13 +660,9 @@ $GIT_INSTALLED = [bool] (Get-Command 'git' -ErrorAction 'SilentlyContinue')
 $INSTALL_USING_GIT = $GIT_INSTALLED
 if ($SkipGit) { $INSTALL_USING_GIT = $false }
 
-# Quit if anything goes wrong
-$oldErrorActionPreference = $ErrorActionPreference
-$ErrorActionPreference = 'Stop'
-
 # Bootstrap function
-Install-Scoop
-
-# Reset $ErrorActionPreference to original value
-$ErrorActionPreference = $oldErrorActionPreference
+& {
+    $ErrorActionPreference = 'Stop'
+    Install-Scoop
+}
 #endregion Main
