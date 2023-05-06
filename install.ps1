@@ -37,6 +37,12 @@
 .PARAMETER ScoopCacheDir
     Specifies cache directory.
     Cache directory will be '$ScoopDir\cache' if not specificed.
+.PARAMETER ScoopRepo
+    Specifies Scoop repository URL. $env:SCOOP_REPO could be used instead.
+    'https://github.com/ScoopInstaller/Scoop' will be used when none is provided.
+.PARAMETER ScoopBranch
+    Specific branch of scoop-core to be downloaded. $env:SCOOP_BRANCH could be used instead.
+    'master' will be used if not specificed.
 .PARAMETER NoProxy
     Specifies bypass system proxy or not while installation.
 .PARAMETER Proxy
@@ -55,10 +61,13 @@
 .LINK
     https://github.com/ScoopInstaller/Scoop/wiki
 #>
+[CmdletBinding()]
 param(
     [String] $ScoopDir,
     [String] $ScoopGlobalDir,
     [String] $ScoopCacheDir,
+    [String] $ScoopRepo,
+    [String] $ScoopBranch,
     [Switch] $NoProxy,
     [Uri] $Proxy,
     [System.Management.Automation.PSCredential] $ProxyCredential,
@@ -71,6 +80,10 @@ param(
 Set-StrictMode -Off
 
 #region Functions
+function _firstNonNullOrEmpty([Array] $Arguments) {
+    return $Arguments | Where-Object { -not [String]::IsNullOrEmpty($_) } | Select-Object -First 1
+}
+
 function Write-InstallInfo {
     param(
         [Parameter(Mandatory, Position = 0)]
@@ -286,6 +299,13 @@ function Import-ScoopShim {
 
     if (!(Test-Path -LiteralPath $SCOOP_SHIMS_DIR -PathType 'Container')) {
         New-Item -Path $SCOOP_SHIMS_DIR -Type 'Directory' | Out-Null
+        Write-Verbose "Created shim directory: $SCOOP_SHIMS_DIR"
+    }
+    if ($RunAsAdmin) {
+        if (!(Test-Path -LiteralPath $SCOOP_GLOBAL_SHIMS_DIR -PathType 'Container')) {
+            New-Item -Path $SCOOP_GLOBAL_SHIMS_DIR -Type 'Directory' -Force | Out-Null
+            Write-Verbose "Created global shim directory: $SCOOP_GLOBAL_SHIMS_DIR"
+        }
     }
 
     # The shim
@@ -302,6 +322,7 @@ if (!(Test-Path Variable:PSScriptRoot)) { `$PSScriptRoot = Split-Path `$MyInvoca
 `$path = Join-Path "`$PSScriptRoot" "$relativePath"
 if (`$MyInvocation.ExpectingInput) { `$input | & `$path @args } else { & `$path @args }
 "@
+    Write-Verbose 'Created shim - ps1'
 
     # Make scoop accessible from cmd.exe
     Out-UTF8File -LiteralPath "$shim.cmd" -Content @"
@@ -316,6 +337,7 @@ set invalid="='
 if !args! == !invalid! ( set args= )
 powershell -NoProfile -ExecutionPolicy Unrestricted "& '$path' %args%; exit `$LASTEXITCODE"
 "@
+    Write-Verbose 'Created shim - cmd'
 
     # Make scoop accessible from bash or other posix shell
     Out-UTF8File -LiteralPath $shim -LineEnd "`n" -Content @(
@@ -323,10 +345,12 @@ powershell -NoProfile -ExecutionPolicy Unrestricted "& '$path' %args%; exit `$LA
         "powershell.exe -NoProfile -NoLogo -ExecutionPolicy Unrestricted `"$path`" `"$@`"",
         ''
     )
+    Write-Verbose 'Created shim - bash'
 
     # Backwards compatible with scoop
     Get-ChildItem $SCOOP_SHIMS_DIR -Filter 'shovel.*' |
         Copy-Item -Destination { Join-Path $_.Directory.FullName (($_.BaseName -replace 'shovel', 'scoop') + $_.Extension) }
+    Write-Verbose 'Created scoop commands'
 }
 
 function Get-Env {
@@ -343,6 +367,7 @@ function Add-ShimsDirToPath {
     # Get $env:PATH of current user
     $userEnvPath = Get-Env 'PATH'
 
+    # User
     if ($userEnvPath -notmatch [Regex]::Escape($SCOOP_SHIMS_DIR)) {
         $h = (Get-PSProvider 'FileSystem').Home
         if (!$h.EndsWith('\')) { $h += '\' }
@@ -359,6 +384,9 @@ function Add-ShimsDirToPath {
         # For current session
         $env:PATH = "$SCOOP_SHIMS_DIR;$env:PATH"
     }
+
+    # Machine
+    # $SCOOP_GLOBAL_SHIMS_DIR
 }
 
 function Use-Config {
@@ -444,7 +472,10 @@ function Add-DefaultConfig {
     }
 
     # save current datatime to lastUpdate
-    Add-Config -Name 'lastUpdate' -Value ([System.DateTime]::Now.ToString('o')) | Out-Null
+    Add-Config -Name 'lastUpdate' -Value ([System.DateTime]::Now.AddHours(1).ToString('258|yyyy-MM-dd HH:mm:ss')) | Out-Null
+    Add-Config -Name 'SCOOP_REPO' -Value $SCOOP_REPO | Out-Null
+    Add-Config -Name 'SCOOP_BRANCH' -Value $SCOOP_BRANCH | Out-Null
+    Add-Config -Name 'MSIEXTRACT_USE_LESSMSI' -Value $true | Out-Null
     if ($SkipRobocopy) {
         Add-Config -Name 'core.preferMoveItem' -Value $true | Out-Null
     }
@@ -527,13 +558,17 @@ $IS_EXECUTED_FROM_IEX = ($null -eq $MyInvocation.MyCommand.Path)
 $SCOOP_DEFAULT_DIR = "${env:USERPROFILE}\scoop"
 $SCOOP_GLOBAL_DEFAULT_DIR = "${env:ProgramData}\scoop"
 
-# TODO: Change and rebrand
+# TODO: Change and rebrand# Scoop repository
+$SCOOP_REPO = _firstNonNullOrEmpty $ScoopRepo, $env:SCOOP_REPO, 'https://github.com/ScoopInstaller/Scoop'
+$SCOOP_REPO = $SCOOP_REPO -replace '\.git$'
+# Scoop branch
+$SCOOP_BRANCH = _firstNonNullOrEmpty $ScoopBranch, $env:SCOOP_BRANCH, 'master'
 # Scoop root directory
-$SCOOP_DIR = $ScoopDir, $env:SCOOP, $SCOOP_DEFAULT_DIR | Where-Object { -not [String]::IsNullOrEmpty($_) } | Select-Object -First 1
+$SCOOP_DIR = _firstNonNullOrEmpty $ScoopDir, $env:SCOOP, $SCOOP_DEFAULT_DIR
 # Scoop global apps directory
-$SCOOP_GLOBAL_DIR = $ScoopGlobalDir, $env:SCOOP_GLOBAL, $SCOOP_GLOBAL_DEFAULT_DIR | Where-Object { -not [String]::IsNullOrEmpty($_) } | Select-Object -First 1
+$SCOOP_GLOBAL_DIR = _firstNonNullOrEmpty $ScoopGlobalDir, $env:SCOOP_GLOBAL, $SCOOP_GLOBAL_DEFAULT_DIR
 # Scoop cache directory
-$SCOOP_CACHE_DIR = $ScoopCacheDir, $env:SCOOP_CACHE, "${SCOOP_DIR}\cache" | Where-Object { -not [String]::IsNullOrEmpty($_) } | Select-Object -First 1
+$SCOOP_CACHE_DIR = _firstNonNullOrEmpty $ScoopCacheDir, $env:SCOOP_CACHE, "${SCOOP_DIR}\cache"
 # Scoop shims directory
 $SCOOP_SHIMS_DIR = "${SCOOP_DIR}\shims"
 # Scoop global shims directory
@@ -545,11 +580,11 @@ $SCOOP_BUCKETS_DIR = "${SCOOP_DIR}\buckets"
 # Scoop main bucket directory
 $SCOOP_MAIN_BUCKET_DIR = "${SCOOP_DIR}\buckets\main"
 # Scoop config file location
-$SCOOP_CONFIG_HOME = $env:XDG_CONFIG_HOME, "${env:USERPROFILE}\.config" | Where-Object { -not [String]::IsNullOrEmpty($_) } | Select-Object -First 1
+$SCOOP_CONFIG_HOME = _firstNonNullOrEmpty $env:XDG_CONFIG_HOME, "${env:USERPROFILE}\.config"
 $SCOOP_CONFIG_FILE = "${SCOOP_CONFIG_HOME}\scoop\config.json"
 
 # TODO: Use a specific version of Scoop and the main bucket
-$SCOOP_PACKAGE_REPO = 'https://github.com/ScoopInstaller/Scoop/archive/master.zip'
+$SCOOP_PACKAGE_REPO = "${SCOOP_REPO}/archive/${SCOOP_BRANCH}.zip"
 $SCOOP_MAIN_BUCKET_REPO = 'https://github.com/ScoopInstaller/Main/archive/master.zip'
 
 # Bootstrap function
