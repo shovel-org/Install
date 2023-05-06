@@ -47,6 +47,9 @@
     Use the credentials of the current user for the proxy server that is specified by the -Proxy parameter.
 .PARAMETER RunAsAdmin
     Force to run the installer as administrator.
+.PARAMETER SkipRobocopy
+    Do not check existence of robocopy.exe in windows PATH.
+    Useful for nanocore installations.
 .LINK
     https://scoop.sh
 .LINK
@@ -60,7 +63,8 @@ param(
     [Uri] $Proxy,
     [System.Management.Automation.PSCredential] $ProxyCredential,
     [Switch] $ProxyUseDefaultCredentials,
-    [Switch] $RunAsAdmin
+    [Switch] $RunAsAdmin,
+    [Switch] $SkipRobocopy
 )
 
 # Disable StrictMode in this script
@@ -129,8 +133,10 @@ function Test-Prerequisite {
     }
 
     # Ensure Robocopy.exe is accessible
-    if (!([bool](Get-Command -Name 'robocopy' -ErrorAction 'SilentlyContinue'))) {
-        Deny-Install 'Scoop requires ''C:\Windows\System32\Robocopy.exe'' to work. Please make sure ''C:\Windows\System32'' is in your PATH.'
+    if (!$SkipRobocopy) {
+        if (!([bool](Get-Command -Name 'robocopy' -ErrorAction 'SilentlyContinue'))) {
+            Deny-Install 'Scoop requires ''C:\Windows\System32\Robocopy.exe'' to work. Please make sure ''C:\Windows\System32'' is in your PATH.'
+        }
     }
 
     # Detect if RunAsAdministrator, there is no need to run as administrator when installing Scoop.
@@ -439,6 +445,9 @@ function Add-DefaultConfig {
 
     # save current datatime to lastUpdate
     Add-Config -Name 'lastUpdate' -Value ([System.DateTime]::Now.ToString('o')) | Out-Null
+    if ($SkipRobocopy) {
+        Add-Config -Name 'core.preferMoveItem' -Value $true | Out-Null
+    }
 }
 
 function Get-AllRequiredFile {
