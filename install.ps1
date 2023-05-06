@@ -25,24 +25,31 @@
 
 <#
 .SYNOPSIS
-    Scoop installer.
-.DESCRIPTION
-    The installer of Scoop. For details please check the website and wiki.
+    Generic installer to install any scoop fork hosted on GitHub.
+    Soon will be fully rebranded to Shovel.
 .PARAMETER ScoopDir
-    Specifies directory to install.
-    Scoop will be installed to '$env:USERPROFILE\scoop' if not specificed.
+    Specifies directory to install. $env:SCOOP could be used instead.
+    Scoop will be installed to '$env:USERPROFILE\Shovel' if not specificed.
 .PARAMETER ScoopGlobalDir
-    Specifies global app directory.
-    Global app will be installed to '$env:ProgramData\scoop' if not specificed.
+    Specifies global app directory. $env:SCOOP_GLOBAL could be used instead.
+    Global app will be installed to '$env:ProgramData\Shovel' if not specificed.
 .PARAMETER ScoopCacheDir
-    Specifies cache directory.
+    Specifies cache directory. $env:SCOOP_CACHE could be used instead.
     Cache directory will be '$ScoopDir\cache' if not specificed.
 .PARAMETER ScoopRepo
     Specifies Scoop repository URL. $env:SCOOP_REPO could be used instead.
-    'https://github.com/ScoopInstaller/Scoop' will be used when none is provided.
+    'https://github.com/Ash258/Scoop-Core' will be used when none is provided.
 .PARAMETER ScoopBranch
     Specific branch of scoop-core to be downloaded. $env:SCOOP_BRANCH could be used instead.
-    'master' will be used if not specificed.
+    'main' will be used if not specificed.
+.PARAMETER InstallerCacheDir
+    Specify local directory where required files are located to eliminate the need to download.
+    Scoop cache directory will be used if not specificed.
+    Following files are supported:
+        Core.zip
+        Base.zip
+        main.zip
+    Place them to the specified directory and set this parameter to the directory.
 .PARAMETER NoProxy
     Specifies bypass system proxy or not while installation.
 .PARAMETER Proxy
@@ -56,6 +63,9 @@
 .PARAMETER SkipRobocopy
     Do not check existence of robocopy.exe in windows PATH.
     Useful for nanocore installations.
+.PARAMETER SkipGit
+    Use this option if git is installed, but should not be used.
+    Useful only when git is installed, but there is need to install from cached files due to network issues.
 .LINK
     https://scoop.sh
 .LINK
@@ -68,12 +78,14 @@ param(
     [String] $ScoopCacheDir,
     [String] $ScoopRepo,
     [String] $ScoopBranch,
+    [String] $InstallerCacheDir,
     [Switch] $NoProxy,
     [Uri] $Proxy,
     [System.Management.Automation.PSCredential] $ProxyCredential,
     [Switch] $ProxyUseDefaultCredentials,
     [Switch] $RunAsAdmin,
-    [Switch] $SkipRobocopy
+    [Switch] $SkipRobocopy,
+    [Switch] $SkipGit
 )
 
 # Disable StrictMode in this script
@@ -273,7 +285,7 @@ function Out-UTF8File {
         [System.IO.FileInfo] $File,
         $Content,
         $LineEnd = "`r`n",
-        [Parameter(ValueFromPipeline = $True)]
+        [Parameter(ValueFromPipeline)]
         [PSObject] $InputObject
     )
 
@@ -366,8 +378,8 @@ function Get-Env {
 function Add-ShimsDirToPath {
     # Get $env:PATH of current user
     $userEnvPath = Get-Env 'PATH'
+    $newUserEnvPath = "$SCOOP_SHIMS_DIR;$userEnvPath"
 
-    # User
     if ($userEnvPath -notmatch [Regex]::Escape($SCOOP_SHIMS_DIR)) {
         $h = (Get-PSProvider 'FileSystem').Home
         if (!$h.EndsWith('\')) { $h += '\' }
@@ -380,13 +392,33 @@ function Add-ShimsDirToPath {
         }
 
         # For future sessions
-        [System.Environment]::SetEnvironmentVariable('PATH', "$SCOOP_SHIMS_DIR;$userEnvPath", 'User')
+        [System.Environment]::SetEnvironmentVariable('PATH', $newUserEnvPath,'User')
         # For current session
-        $env:PATH = "$SCOOP_SHIMS_DIR;$env:PATH"
+        $env:PATH = $newUserEnvPath
     }
 
-    # Machine
-    # $SCOOP_GLOBAL_SHIMS_DIR
+    # Get $env:PATH of machine
+    $globalEnvPath = Get-Env 'PATH' -global
+    $newGlobalEnvPath = "${SCOOP_GLOBAL_SHIMS_DIR};${globalEnvPath}"
+
+    if ($globalEnvPath -notmatch [Regex]::Escape($SCOOP_GLOBAL_SHIMS_DIR)) {
+        if (Test-IsAdministrator) {
+            Write-InstallInfo "Adding ${SCOOP_GLOBAL_SHIMS_DIR} to system-wide PATH."
+            # For future sessions
+            [System.Environment]::SetEnvironmentVariable('PATH', $newGlobalEnvPath, 'Machine')
+            # For current session
+            $env:PATH = $newGlobalEnvPath
+        }
+    }
+
+    # Nanoserver does not have user specific path
+    if ($env:POWERSHELL_DISTRIBUTION_CHANNEL -like '*nanoserver*') {
+        $newGlobalEnvPath = "${SCOOP_SHIMS_DIR};$newGlobalEnvPath"
+        # For future sessions
+        [System.Environment]::SetEnvironmentVariable('PATH', $newGlobalEnvPath, 'Machine')
+        # For current session
+        $env:PATH = $newGlobalEnvPath
+    }
 }
 
 function Use-Config {
@@ -406,15 +438,17 @@ function Add-Config {
         [Parameter(Mandatory, Position = 0)]
         [String] $Name,
         [Parameter(Mandatory, Position = 1)]
-        [String] $Value
+        $Value
     )
 
     $scoopConfig = Use-Config
 
+    # Cast to boolean
+    if (($Value -eq [bool]::TrueString) -or ($Value -eq [bool]::FalseString)) {
+        $Value = [System.Convert]::ToBoolean($Value)
+    }
+
     if ($scoopConfig -is [System.Management.Automation.PSObject]) {
-        if ($Value -eq [bool]::TrueString -or $Value -eq [bool]::FalseString) {
-            $Value = [System.Convert]::ToBoolean($Value)
-        }
         if ($null -eq $scoopConfig.$Name) {
             $scoopConfig | Add-Member -MemberType 'NoteProperty' -Name $Name -Value $Value
         } else {
@@ -440,38 +474,23 @@ function Add-Config {
 }
 
 function Add-DefaultConfig {
-    # If user-level SCOOP env not defined, save to rootPath
+    $user = if (Test-IsAdministrator) { 'Machine' } else { 'User' }
+
     if (!(Get-Env 'SCOOP')) {
-        if ($SCOOP_DIR -ne "$env:USERPROFILE\scoop") {
-            Add-Config -Name 'rootPath' -Value $SCOOP_DIR | Out-Null
-        }
+        [Environment]::SetEnvironmentVariable('SCOOP', $SCOOP_DIR, 'User')
+        $env:SCOOP = $SCOOP_DIR
     }
 
-    # Use system SCOOP_GLOBAL, or set system SCOOP_GLOBAL
-    # with $env:SCOOP_GLOBAL if RunAsAdmin, otherwise save to globalPath
     if (!(Get-Env 'SCOOP_GLOBAL' -global)) {
-        if ((Test-IsAdministrator) -and $env:SCOOP_GLOBAL) {
-            [Environment]::SetEnvironmentVariable('SCOOP_GLOBAL', $env:SCOOP_GLOBAL, 'Machine')
-        } else {
-            if ($SCOOP_GLOBAL_DIR -ne "$env:ProgramData\scoop") {
-                Add-Config -Name 'globalPath' -Value $SCOOP_GLOBAL_DIR | Out-Null
-            }
-        }
+        [Environment]::SetEnvironmentVariable('SCOOP_GLOBAL', $SCOOP_GLOBAL_DIR, $user)
+        $env:SCOOP_GLOBAL = $SCOOP_GLOBAL_DIR
     }
 
-    # Use system SCOOP_CACHE, or set system SCOOP_CACHE
-    # with $env:SCOOP_CACHE if RunAsAdmin, otherwise save to cachePath
-    if (!(Get-Env 'SCOOP_CACHE' -global)) {
-        if ((Test-IsAdministrator) -and $env:SCOOP_CACHE) {
-            [Environment]::SetEnvironmentVariable('SCOOP_CACHE', $env:SCOOP_CACHE, 'Machine')
-        } else {
-            if ($SCOOP_CACHE_DIR -ne "${SCOOP_DIR}\cache") {
-                Add-Config -Name 'cachePath' -Value $SCOOP_CACHE_DIR | Out-Null
-            }
-        }
+    if (!(Get-Env 'SCOOP_CACHE' -global) -or !(Get-Env 'SCOOP_CACHE')) {
+        [Environment]::SetEnvironmentVariable('SCOOP_CACHE', $SCOOP_CACHE_DIR, $user)
+        $env:SCOOP_CACHE = $SCOOP_CACHE_DIR
     }
 
-    # save current datatime to lastUpdate
     Add-Config -Name 'lastUpdate' -Value ([System.DateTime]::Now.AddHours(1).ToString('258|yyyy-MM-dd HH:mm:ss')) | Out-Null
     Add-Config -Name 'SCOOP_REPO' -Value $SCOOP_REPO | Out-Null
     Add-Config -Name 'SCOOP_BRANCH' -Value $SCOOP_BRANCH | Out-Null
@@ -482,37 +501,81 @@ function Add-DefaultConfig {
 }
 
 function Get-AllRequiredFile {
-    # Download scoop zip from GitHub
-    Write-InstallInfo 'Downloading...'
+    $SCOOP_MAIN_BUCKET_DIR = "${SCOOP_BUCKETS_DIR}\main"
+    $SCOOP_BASE_BUCKET_DIR = "${SCOOP_BUCKETS_DIR}\Base"
+
+    $SCOOP_APP_DIR, $SCOOP_BUCKETS_DIR, $SCOOP_MAIN_BUCKET_DIR, $SCOOP_BASE_BUCKET_DIR | ForEach-Object {
+        if (!(Test-Path -LiteralPath $_ -PathType 'Container')) {
+            New-Item -Path $_ -ItemType 'Directory' | Out-Null
+        }
+    }
+
+    if ($INSTALL_USING_GIT) {
+        Write-InstallInfo 'Installing using git'
+        git clone --branch $SCOOP_BRANCH $SCOOP_GIT_REPO_GIT $SCOOP_APP_DIR
+
+        git clone $SCOOP_MAIN_BUCKET_REPO_GIT $SCOOP_MAIN_BUCKET_DIR
+        git clone $SCOOP_BASE_BUCKET_REPO_GIT $SCOOP_BASE_BUCKET_DIR
+        return
+    }
+
     $downloader = Get-Downloader
 
     # 1. download scoop
-    $scoopZipfile = "${SCOOP_APP_DIR}\scoop.zip"
-    if (!(Test-Path -LiteralPath $SCOOP_APP_DIR -PathType 'Container')) {
-        New-Item -Path $SCOOP_APP_DIR -Type 'Directory' | Out-Null
+    $cachedCore = "${INSTALL_CACHE}\Core.zip"
+    $scoopZipfile = "${SCOOP_APP_DIR}\Core.zip"
+    if (Test-Path -LiteralPath $cachedCore -PathType 'Leaf') {
+        Write-InstallInfo "Loading Core from '$cachedCore'"
+        Copy-Item $cachedCore $scoopZipfile
+    } else {
+        Write-InstallInfo 'Downloading Core'
+        $downloader.DownloadFile($SCOOP_PACKAGE_REPO, $scoopZipfile)
     }
-    $downloader.DownloadFile($SCOOP_PACKAGE_REPO, $scoopZipfile)
+
     # 2. download scoop main bucket
-    $scoopMainZipfile = "${SCOOP_MAIN_BUCKET_DIR}\scoop-main.zip"
-    if (!(Test-Path -LiteralPath $SCOOP_MAIN_BUCKET_DIR -PathType 'Container')) {
-        New-Item -Path $SCOOP_MAIN_BUCKET_DIR -Type 'Directory' | Out-Null
+    $cachedMain = "${INSTALL_CACHE}\main.zip"
+    $scoopMainZipfile = "${SCOOP_MAIN_BUCKET_DIR}\main.zip"
+    if (Test-Path -LiteralPath $cachedMain -PathType 'Leaf') {
+        Write-InstallInfo "Loading Main bucket from '$cachedMain'"
+        Copy-Item $cachedMain $scoopMainZipfile
+    } else {
+        Write-InstallInfo 'Downloading Main bucket'
+        $downloader.DownloadFile($SCOOP_MAIN_BUCKET_REPO, $scoopMainZipfile)
     }
-    $downloader.DownloadFile($SCOOP_MAIN_BUCKET_REPO, $scoopMainZipfile)
+
+    # 3. download base bucket
+    $cachedBased = "${INSTALL_CACHE}\Base.zip"
+    $scoopBaseZipfile = "${SCOOP_BASE_BUCKET_DIR}\Base.zip"
+    if (Test-Path -LiteralPath $cachedBased -PathType 'Leaf') {
+        Write-InstallInfo "Loading Base bucket from '$cachedBased'"
+        Copy-Item $cachedBased $scoopBaseZipfile
+    } else {
+        Write-InstallInfo 'Downloading Base bucket'
+        $downloader.DownloadFile($SCOOP_BASE_BUCKET_REPO, $scoopBaseZipfile)
+    }
 
     # Extract files from downloaded zip
     Write-InstallInfo 'Extracting...'
+
+    #TODO: Move instead of Copy
     # 1. extract scoop
     $scoopUnzipTempDir = "${SCOOP_APP_DIR}\_tmp"
     Expand-ZipArchive $scoopZipfile $scoopUnzipTempDir
-    Copy-Item "${scoopUnzipTempDir}\scoop-*\*" $SCOOP_APP_DIR -Recurse -Force
+    Copy-Item "${scoopUnzipTempDir}\${SCOOP_PACKAGE_REPO_ARCHIVE_NAME}-${SCOOP_BRANCH}\*" $SCOOP_APP_DIR -Recurse -Force
+
     # 2. extract scoop main bucket
     $scoopMainUnzipTempDir = "${SCOOP_MAIN_BUCKET_DIR}\_tmp"
     Expand-ZipArchive $scoopMainZipfile $scoopMainUnzipTempDir
     Copy-Item "${scoopMainUnzipTempDir}\Main-*\*" $SCOOP_MAIN_BUCKET_DIR -Recurse -Force
 
+    # 3. extract base bucket
+    $scoopBaseUnzipTempDir = "${SCOOP_BASE_BUCKET_DIR}\_tmp"
+    Expand-ZipArchive $scoopBaseZipfile $scoopBaseUnzipTempDir
+    Copy-Item "${scoopBaseUnzipTempDir}\Base-*\*" $SCOOP_BASE_BUCKET_DIR -Recurse -Force
+
     # Cleanup
-    Remove-Item $scoopUnzipTempDir, $scoopMainUnzipTempDir -Recurse -Force
-    Remove-Item $scoopZipfile, $scoopMainZipfile
+    Remove-Item $scoopUnzipTempDir, $scoopMainUnzipTempDir, $scoopBaseUnzipTempDir -Recurse -Force
+    Remove-Item $scoopZipfile, $scoopMainZipfile, $scoopBaseZipfile
 }
 
 function Install-Scoop {
@@ -544,7 +607,7 @@ function Install-Scoop {
 #region Main
 # Installer script root
 $INSTALLER_DIR = $PSScriptRoot
-$NoProxy, $Proxy, $ProxyCredential, $ProxyUseDefaultCredentials, $RunAsAdmin, $INSTALLER_DIR | Out-Null
+$NoProxy, $Proxy, $ProxyCredential, $ProxyUseDefaultCredentials, $RunAsAdmin, $SkipRobocopy, $INSTALLER_DIR | Out-Null
 
 if (!$env:USERPROFILE) {
     if (!$env:HOME) { Deny-Install 'Cannot resolve user''s home directory. USERPROFILE and HOME environment variables are not set.' }
@@ -555,14 +618,15 @@ if (!$env:USERPROFILE) {
 # Prepare variables
 $IS_EXECUTED_FROM_IEX = ($null -eq $MyInvocation.MyCommand.Path)
 
-$SCOOP_DEFAULT_DIR = "${env:USERPROFILE}\scoop"
-$SCOOP_GLOBAL_DEFAULT_DIR = "${env:ProgramData}\scoop"
+$SCOOP_DEFAULT_DIR = "${env:USERPROFILE}\Shovel"
+$SCOOP_GLOBAL_DEFAULT_DIR = "${env:ProgramData}\Shovel"
 
-# TODO: Change and rebrand# Scoop repository
-$SCOOP_REPO = _firstNonNullOrEmpty $ScoopRepo, $env:SCOOP_REPO, 'https://github.com/ScoopInstaller/Scoop'
+# TODO: Change and rebrand
+# Scoop repository
+$SCOOP_REPO = _firstNonNullOrEmpty $ScoopRepo, $env:SCOOP_REPO, 'https://github.com/Ash258/Scoop-Core'
 $SCOOP_REPO = $SCOOP_REPO -replace '\.git$'
 # Scoop branch
-$SCOOP_BRANCH = _firstNonNullOrEmpty $ScoopBranch, $env:SCOOP_BRANCH, 'master'
+$SCOOP_BRANCH = _firstNonNullOrEmpty $ScoopBranch, $env:SCOOP_BRANCH, 'main'
 # Scoop root directory
 $SCOOP_DIR = _firstNonNullOrEmpty $ScoopDir, $env:SCOOP, $SCOOP_DEFAULT_DIR
 # Scoop global apps directory
@@ -577,15 +641,24 @@ $SCOOP_GLOBAL_SHIMS_DIR = "${SCOOP_GLOBAL_DIR}\shims"
 $SCOOP_APP_DIR = "${SCOOP_DIR}\apps\scoop\current"
 # Scoop buckets directory
 $SCOOP_BUCKETS_DIR = "${SCOOP_DIR}\buckets"
-# Scoop main bucket directory
-$SCOOP_MAIN_BUCKET_DIR = "${SCOOP_DIR}\buckets\main"
 # Scoop config file location
 $SCOOP_CONFIG_HOME = _firstNonNullOrEmpty $env:XDG_CONFIG_HOME, "${env:USERPROFILE}\.config"
 $SCOOP_CONFIG_FILE = "${SCOOP_CONFIG_HOME}\scoop\config.json"
 
-# TODO: Use a specific version of Scoop and the main bucket
-$SCOOP_PACKAGE_REPO = "${SCOOP_REPO}/archive/${SCOOP_BRANCH}.zip"
-$SCOOP_MAIN_BUCKET_REPO = 'https://github.com/ScoopInstaller/Main/archive/master.zip'
+# Cache used for loading the repository zips instead of downloading them.
+$INSTALL_CACHE = _firstNonNullOrEmpty $InstallerCacheDir, $ScoopCacheDir
+
+$SCOOP_PACKAGE_REPO_GIT = $SCOOP_REPO
+$SCOOP_PACKAGE_REPO = "${SCOOP_PACKAGE_REPO_GIT}/archive/${SCOOP_BRANCH}.zip"
+$SCOOP_PACKAGE_REPO_ARCHIVE_NAME = ($SCOOP_REPO -split '/')[-1]
+$SCOOP_MAIN_BUCKET_REPO_GIT = 'https://github.com/ScoopInstaller/Main'
+$SCOOP_MAIN_BUCKET_REPO = "${SCOOP_MAIN_BUCKET_REPO_GIT}/archive/master.zip"
+$SCOOP_BASE_BUCKET_REPO_GIT = 'https://github.com/shovel-org/Base'
+$SCOOP_BASE_BUCKET_REPO = "${SCOOP_BASE_BUCKET_REPO_GIT}/archive/main.zip"
+
+$GIT_INSTALLED = [bool] (Get-Command 'git' -ErrorAction 'SilentlyContinue')
+$INSTALL_USING_GIT = $GIT_INSTALLED
+if ($SkipGit) { $INSTALL_USING_GIT = $false }
 
 # Bootstrap function
 & {
