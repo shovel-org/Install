@@ -37,6 +37,12 @@
 .PARAMETER ScoopCacheDir
     Specifies cache directory.
     Cache directory will be '$ScoopDir\cache' if not specificed.
+.PARAMETER ScoopRepo
+    Specifies Scoop repository URL. $env:SCOOP_REPO could be used instead.
+    'https://github.com/ScoopInstaller/Scoop' will be used when none is provided.
+.PARAMETER ScoopBranch
+    Specific branch of scoop-core to be downloaded. $env:SCOOP_BRANCH could be used instead.
+    'master' will be used if not specificed.
 .PARAMETER NoProxy
     Specifies bypass system proxy or not while installation.
 .PARAMETER Proxy
@@ -55,10 +61,13 @@
 .LINK
     https://github.com/ScoopInstaller/Scoop/wiki
 #>
+[CmdletBinding()]
 param(
     [String] $ScoopDir,
     [String] $ScoopGlobalDir,
     [String] $ScoopCacheDir,
+    [String] $ScoopRepo,
+    [String] $ScoopBranch,
     [Switch] $NoProxy,
     [Uri] $Proxy,
     [System.Management.Automation.PSCredential] $ProxyCredential,
@@ -444,7 +453,10 @@ function Add-DefaultConfig {
     }
 
     # save current datatime to lastUpdate
-    Add-Config -Name 'lastUpdate' -Value ([System.DateTime]::Now.ToString('o')) | Out-Null
+    Add-Config -Name 'lastUpdate' -Value ([System.DateTime]::Now.AddHours(1).ToString('258|yyyy-MM-dd HH:mm:ss')) | Out-Null
+    Add-Config -Name 'SCOOP_REPO' -Value $SCOOP_REPO | Out-Null
+    Add-Config -Name 'SCOOP_BRANCH' -Value $SCOOP_BRANCH | Out-Null
+    Add-Config -Name 'MSIEXTRACT_USE_LESSMSI' -Value $true | Out-Null
     if ($SkipRobocopy) {
         Add-Config -Name 'core.preferMoveItem' -Value $true | Out-Null
     }
@@ -527,7 +539,11 @@ $IS_EXECUTED_FROM_IEX = ($null -eq $MyInvocation.MyCommand.Path)
 $SCOOP_DEFAULT_DIR = "${env:USERPROFILE}\scoop"
 $SCOOP_GLOBAL_DEFAULT_DIR = "${env:ProgramData}\scoop"
 
-# TODO: Change and rebrand
+# TODO: Change and rebrand# Scoop repository
+$SCOOP_REPO = $ScoopRepo, $env:SCOOP_REPO, 'https://github.com/ScoopInstaller/Scoop' | Where-Object { -not [String]::IsNullOrEmpty($_) } | Select-Object -First 1
+$SCOOP_REPO = $SCOOP_REPO -replace '\.git$'
+# Scoop branch
+$SCOOP_BRANCH = $ScoopBranch, $env:SCOOP_BRANCH, 'master' | Where-Object { -not [String]::IsNullOrEmpty($_) } | Select-Object -First 1
 # Scoop root directory
 $SCOOP_DIR = $ScoopDir, $env:SCOOP, $SCOOP_DEFAULT_DIR | Where-Object { -not [String]::IsNullOrEmpty($_) } | Select-Object -First 1
 # Scoop global apps directory
@@ -549,7 +565,7 @@ $SCOOP_CONFIG_HOME = $env:XDG_CONFIG_HOME, "${env:USERPROFILE}\.config" | Where-
 $SCOOP_CONFIG_FILE = "${SCOOP_CONFIG_HOME}\scoop\config.json"
 
 # TODO: Use a specific version of Scoop and the main bucket
-$SCOOP_PACKAGE_REPO = 'https://github.com/ScoopInstaller/Scoop/archive/master.zip'
+$SCOOP_PACKAGE_REPO = "${SCOOP_REPO}/archive/${SCOOP_BRANCH}.zip"
 $SCOOP_MAIN_BUCKET_REPO = 'https://github.com/ScoopInstaller/Main/archive/master.zip'
 
 # Bootstrap function
