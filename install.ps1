@@ -298,13 +298,13 @@ function Import-ScoopShim {
     $path = "$SCOOP_APP_DIR\bin\scoop.ps1"
 
     if (!(Test-Path -LiteralPath $SCOOP_SHIMS_DIR -PathType 'Container')) {
-        Write-Verbose "Creating shim directory: $SCOOP_SHIMS_DIR"
         New-Item -Path $SCOOP_SHIMS_DIR -Type 'Directory' | Out-Null
+        Write-Verbose "Created shim directory: $SCOOP_SHIMS_DIR"
     }
     if ($RunAsAdmin) {
         if (!(Test-Path -LiteralPath $SCOOP_GLOBAL_SHIMS_DIR -PathType 'Container')) {
-            Write-Verbose "Creating Global shim directory: $SCOOP_GLOBAL_SHIMS_DIR"
             New-Item -Path $SCOOP_GLOBAL_SHIMS_DIR -Type 'Directory' -Force | Out-Null
+            Write-Verbose "Created global shim directory: $SCOOP_GLOBAL_SHIMS_DIR"
         }
     }
 
@@ -350,7 +350,7 @@ powershell -NoProfile -ExecutionPolicy Unrestricted "& '$path' %args%; exit `$LA
     # Backwards compatible with scoop
     Get-ChildItem $SCOOP_SHIMS_DIR -Filter 'shovel.*' |
         Copy-Item -Destination { Join-Path $_.Directory.FullName (($_.BaseName -replace 'shovel', 'scoop') + $_.Extension) }
-    Write-Verbose 'Scoop commands created'
+    Write-Verbose 'Created scoop commands'
 }
 
 function Get-Env {
