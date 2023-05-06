@@ -249,19 +249,26 @@ function Expand-ZipArchive {
 
 function Out-UTF8File {
     param(
-        [Alias('Path', 'LiteralPath')]
+        [Parameter(Mandatory, Position = 0)]
+        [Alias('Path', 'LiteralPath', 'FilePath')]
         [System.IO.FileInfo] $File,
         $Content,
-        $LineEnd = "`r`n"
+        $LineEnd = "`r`n",
+        [Parameter(ValueFromPipeline = $True)]
+        [PSObject] $InputObject
     )
 
-    if ($null -eq $Content) { return }
+    begin {
+        if ($null -eq $Content) { return }
+    }
 
-    $c = $Content -join $LineEnd
-    if ($PSVersionTable.PSVersion.Major -ge 6) {
-        Set-Content -LiteralPath $File -Value $c -Encoding 'utf8NoBOM'
-    } else {
-        [System.IO.File]::WriteAllText($File, $c)
+    process {
+        $c = $Content -join $LineEnd
+        if ($PSVersionTable.PSVersion.Major -ge 6) {
+            Set-Content -LiteralPath $File -Value $c -Encoding 'utf8NoBOM'
+        } else {
+            [System.IO.File]::WriteAllText($File, $c)
+        }
     }
 }
 
@@ -311,7 +318,7 @@ powershell -NoProfile -ExecutionPolicy Unrestricted "& '$path' %args%; exit `$LA
         ''
     )
 
-    # Adopt shovel commands
+    # Backwards compatible with scoop
     Get-ChildItem $SCOOP_SHIMS_DIR -Filter 'shovel.*' |
         Copy-Item -Destination { Join-Path $_.Directory.FullName (($_.BaseName -replace 'shovel', 'scoop') + $_.Extension) }
 }
@@ -536,13 +543,9 @@ $SCOOP_CONFIG_FILE = "${SCOOP_CONFIG_HOME}\scoop\config.json"
 $SCOOP_PACKAGE_REPO = 'https://github.com/ScoopInstaller/Scoop/archive/master.zip'
 $SCOOP_MAIN_BUCKET_REPO = 'https://github.com/ScoopInstaller/Main/archive/master.zip'
 
-# Quit if anything goes wrong
-$oldErrorActionPreference = $ErrorActionPreference
-$ErrorActionPreference = 'Stop'
-
 # Bootstrap function
-Install-Scoop
-
-# Reset $ErrorActionPreference to original value
-$ErrorActionPreference = $oldErrorActionPreference
+& {
+    $ErrorActionPreference = 'Stop'
+    Install-Scoop
+}
 #endregion Main
