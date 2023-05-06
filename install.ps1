@@ -80,6 +80,10 @@ param(
 Set-StrictMode -Off
 
 #region Functions
+function _firstNonNullOrEmpty([Array] $Arguments) {
+    return $Arguments | Where-Object { -not [String]::IsNullOrEmpty($_) } | Select-Object -First 1
+}
+
 function Write-InstallInfo {
     param(
         [Parameter(Mandatory, Position = 0)]
@@ -294,7 +298,14 @@ function Import-ScoopShim {
     $path = "$SCOOP_APP_DIR\bin\scoop.ps1"
 
     if (!(Test-Path -LiteralPath $SCOOP_SHIMS_DIR -PathType 'Container')) {
+        Write-Verbose "Creating shim directory: $SCOOP_SHIMS_DIR"
         New-Item -Path $SCOOP_SHIMS_DIR -Type 'Directory' | Out-Null
+    }
+    if ($RunAsAdmin) {
+        if (!(Test-Path -LiteralPath $SCOOP_GLOBAL_SHIMS_DIR -PathType 'Container')) {
+            Write-Verbose "Creating Global shim directory: $SCOOP_GLOBAL_SHIMS_DIR"
+            New-Item -Path $SCOOP_GLOBAL_SHIMS_DIR -Type 'Directory' -Force | Out-Null
+        }
     }
 
     # The shim
@@ -311,6 +322,7 @@ if (!(Test-Path Variable:PSScriptRoot)) { `$PSScriptRoot = Split-Path `$MyInvoca
 `$path = Join-Path "`$PSScriptRoot" "$relativePath"
 if (`$MyInvocation.ExpectingInput) { `$input | & `$path @args } else { & `$path @args }
 "@
+    Write-Verbose 'Created shim - ps1'
 
     # Make scoop accessible from cmd.exe
     Out-UTF8File -LiteralPath "$shim.cmd" -Content @"
@@ -325,6 +337,7 @@ set invalid="='
 if !args! == !invalid! ( set args= )
 powershell -NoProfile -ExecutionPolicy Unrestricted "& '$path' %args%; exit `$LASTEXITCODE"
 "@
+    Write-Verbose 'Created shim - cmd'
 
     # Make scoop accessible from bash or other posix shell
     Out-UTF8File -LiteralPath $shim -LineEnd "`n" -Content @(
@@ -332,10 +345,12 @@ powershell -NoProfile -ExecutionPolicy Unrestricted "& '$path' %args%; exit `$LA
         "powershell.exe -NoProfile -NoLogo -ExecutionPolicy Unrestricted `"$path`" `"$@`"",
         ''
     )
+    Write-Verbose 'Created shim - bash'
 
     # Backwards compatible with scoop
     Get-ChildItem $SCOOP_SHIMS_DIR -Filter 'shovel.*' |
         Copy-Item -Destination { Join-Path $_.Directory.FullName (($_.BaseName -replace 'shovel', 'scoop') + $_.Extension) }
+    Write-Verbose 'Scoop commands created'
 }
 
 function Get-Env {
@@ -352,6 +367,7 @@ function Add-ShimsDirToPath {
     # Get $env:PATH of current user
     $userEnvPath = Get-Env 'PATH'
 
+    # User
     if ($userEnvPath -notmatch [Regex]::Escape($SCOOP_SHIMS_DIR)) {
         $h = (Get-PSProvider 'FileSystem').Home
         if (!$h.EndsWith('\')) { $h += '\' }
@@ -368,6 +384,9 @@ function Add-ShimsDirToPath {
         # For current session
         $env:PATH = "$SCOOP_SHIMS_DIR;$env:PATH"
     }
+
+    # Machine
+    # $SCOOP_GLOBAL_SHIMS_DIR
 }
 
 function Use-Config {
@@ -540,16 +559,16 @@ $SCOOP_DEFAULT_DIR = "${env:USERPROFILE}\scoop"
 $SCOOP_GLOBAL_DEFAULT_DIR = "${env:ProgramData}\scoop"
 
 # TODO: Change and rebrand# Scoop repository
-$SCOOP_REPO = $ScoopRepo, $env:SCOOP_REPO, 'https://github.com/ScoopInstaller/Scoop' | Where-Object { -not [String]::IsNullOrEmpty($_) } | Select-Object -First 1
+$SCOOP_REPO = _firstNonNullOrEmpty $ScoopRepo, $env:SCOOP_REPO, 'https://github.com/ScoopInstaller/Scoop'
 $SCOOP_REPO = $SCOOP_REPO -replace '\.git$'
 # Scoop branch
-$SCOOP_BRANCH = $ScoopBranch, $env:SCOOP_BRANCH, 'master' | Where-Object { -not [String]::IsNullOrEmpty($_) } | Select-Object -First 1
+$SCOOP_BRANCH = _firstNonNullOrEmpty $ScoopBranch, $env:SCOOP_BRANCH, 'master'
 # Scoop root directory
-$SCOOP_DIR = $ScoopDir, $env:SCOOP, $SCOOP_DEFAULT_DIR | Where-Object { -not [String]::IsNullOrEmpty($_) } | Select-Object -First 1
+$SCOOP_DIR = _firstNonNullOrEmpty $ScoopDir, $env:SCOOP, $SCOOP_DEFAULT_DIR
 # Scoop global apps directory
-$SCOOP_GLOBAL_DIR = $ScoopGlobalDir, $env:SCOOP_GLOBAL, $SCOOP_GLOBAL_DEFAULT_DIR | Where-Object { -not [String]::IsNullOrEmpty($_) } | Select-Object -First 1
+$SCOOP_GLOBAL_DIR = _firstNonNullOrEmpty $ScoopGlobalDir, $env:SCOOP_GLOBAL, $SCOOP_GLOBAL_DEFAULT_DIR
 # Scoop cache directory
-$SCOOP_CACHE_DIR = $ScoopCacheDir, $env:SCOOP_CACHE, "${SCOOP_DIR}\cache" | Where-Object { -not [String]::IsNullOrEmpty($_) } | Select-Object -First 1
+$SCOOP_CACHE_DIR = _firstNonNullOrEmpty $ScoopCacheDir, $env:SCOOP_CACHE, "${SCOOP_DIR}\cache"
 # Scoop shims directory
 $SCOOP_SHIMS_DIR = "${SCOOP_DIR}\shims"
 # Scoop global shims directory
@@ -561,7 +580,7 @@ $SCOOP_BUCKETS_DIR = "${SCOOP_DIR}\buckets"
 # Scoop main bucket directory
 $SCOOP_MAIN_BUCKET_DIR = "${SCOOP_DIR}\buckets\main"
 # Scoop config file location
-$SCOOP_CONFIG_HOME = $env:XDG_CONFIG_HOME, "${env:USERPROFILE}\.config" | Where-Object { -not [String]::IsNullOrEmpty($_) } | Select-Object -First 1
+$SCOOP_CONFIG_HOME = _firstNonNullOrEmpty $env:XDG_CONFIG_HOME, "${env:USERPROFILE}\.config"
 $SCOOP_CONFIG_FILE = "${SCOOP_CONFIG_HOME}\scoop\config.json"
 
 # TODO: Use a specific version of Scoop and the main bucket
