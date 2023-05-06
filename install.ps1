@@ -570,7 +570,7 @@ function Install-Scoop {
 #region Main
 # Installer script root
 $INSTALLER_DIR = $PSScriptRoot
-$NoProxy, $Proxy, $ProxyCredential, $ProxyUseDefaultCredentials, $RunAsAdmin, $SCOOP_BUCKETS_DIR, $INSTALLER_DIR | Out-Null
+$NoProxy, $Proxy, $ProxyCredential, $ProxyUseDefaultCredentials, $RunAsAdmin, $INSTALLER_DIR | Out-Null
 
 if (!$env:USERPROFILE) {
     if (!$env:HOME) { Deny-Install 'Cannot resolve user''s home directory. USERPROFILE and HOME environment variables are not set.' }
@@ -606,7 +606,9 @@ $SCOOP_APP_DIR = "${SCOOP_DIR}\apps\scoop\current"
 # Scoop buckets directory
 $SCOOP_BUCKETS_DIR = "${SCOOP_DIR}\buckets"
 # Scoop main bucket directory
-$SCOOP_MAIN_BUCKET_DIR = "${SCOOP_DIR}\buckets\main"
+$SCOOP_MAIN_BUCKET_DIR = "${SCOOP_BUCKETS_DIR}\main"
+# Scoop Base bucket directory
+$SCOOP_BASE_BUCKET_DIR = "${SCOOP_BUCKETS_DIR}\Base"
 # Scoop config file location
 $SCOOP_CONFIG_HOME = _firstNonNullOrEmpty $env:XDG_CONFIG_HOME, "${env:USERPROFILE}\.config"
 $SCOOP_CONFIG_FILE = "${SCOOP_CONFIG_HOME}\scoop\config.json"
